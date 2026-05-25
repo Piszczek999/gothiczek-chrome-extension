@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Gothiczek Helper",
+  "version": "1.0",
+  "description": "Helper for gothiczek.pl",
+  "permissions": ["scripting"],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
