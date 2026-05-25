@@ -1,10 +1,10 @@
 # Instalacja
 
 1. Kliknij w zielony przycisk `<> Code` na tej stronie, następnie `Download ZIP`
-2. Wypakuj pobrany plik gdziekolwiek (np. na pulpicie albo w pobranych)
+2. Otwórz pobrany plik i przenieś folder `gothiczek-chrome-extension-main` w łatwo dostępne miejsce (np. Pulpit albo Pobrane)
 3. Uruchom chrome i przejdź na `chrome://extensions/` (wpisz w adres URL)
 4. Kliknij przycisk `Załaduj rozpakowane` w lewym górnych rogu strony
-5. Wybierz poprzednio rozpakowany folder
+5. Wybierz poprzednio rozpakowany folder o nazwie `gothiczek-chrome-extension-main`
 6. Odśwież stronę `gothiczek.pl` jeżeli działała w tle podczas instalacji
 
 Od tego momentu rozszerzenie powinno działać na stronie gry
