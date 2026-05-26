@@ -108,7 +108,7 @@ function _loop(now) {
     console.error("[AutoMine] tick error:", err);
   }
 
-  loopTimerId = setTimeout(() => _loop(performance.now()), 1000 / 60);
+  loopTimerId = setTimeout(() => _loop(performance.now()), 1000 / 30);
 }
 
 function _autoMineTick(dt) {
@@ -142,6 +142,7 @@ function _moveOrMine(me, vein, dt) {
   const dist = Math.hypot(me.x - vein.x, me.y - vein.y);
 
   if (dist <= 20) {
+    console.log(`Starting mining vein ${vein.id} (${vein.materialType})`);
     App.state.socket.emit("mine_start_mining", { veinId: vein.id });
     me.miningVeinId = vein.id;
     return;
@@ -164,6 +165,7 @@ function _moveOrMine(me, vein, dt) {
 }
 
 function _cancelMining(me) {
+  console.log("Cancelling mining");
   App.state.socket.emit("mine_cancel_mining");
   me.miningVeinId = null;
 }
