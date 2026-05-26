@@ -10,12 +10,12 @@
 
 Od tego momentu rozszerzenie powinno działać na stronie gry
 
-# Jak wyłączyć
+# Jeśli wtyczka nie działa
 
-Jeśli po aktualizacji gry strona przestanie działać prawidłowo, należy:
+Jeśli wtyczka przestanie działać prawidłowo, należy:
 
-1. Przejść na stronę `chrome://extensions/` w Google Chrome
-2. Wyłączyć rozszerzenie `Gothiczek Helper`
+- wyłączyć rozszerzenie (jeśli uniemożliwia korzystanie z gry)
+- poinformować mnie o błędzie (kontakt niżej)
 
 # Co dodaje to rozszerzenie
 
