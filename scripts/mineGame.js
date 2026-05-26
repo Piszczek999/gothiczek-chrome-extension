@@ -2,18 +2,21 @@
 
 function connectSocketHandlers() {
   if (!App?.state?.socket) {
-    setTimeout(connectSocketHandlers, 50);
+    console.log("Socket not ready, retrying mine game socket setup...");
+    setTimeout(connectSocketHandlers, 100);
     return;
   }
   const { socket } = App.state;
   socket.on("mine_state", onMineState);
   socket.on("mine_vein_update", onVeinUpdate);
   socket.on("mine_vein_spawned", onVeinSpawned);
+  console.log("Connected mine game socket handlers.");
 }
 connectSocketHandlers();
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let mineGameInitialized = false;
+let isWaiting = false;
 
 let SPEED = 140;
 const VIRT_W = 800;
@@ -40,15 +43,10 @@ function onMineState(data) {
 }
 
 function onVeinUpdate({ veinId, depleted, newCharges }) {
-  if (!mineGameInitialized) {
-    setTimeout(() => onVeinUpdate({ veinId, depleted, newCharges }), 100);
-    return;
-  }
   const { veins } = App.state.mine;
   if (depleted) {
     App.state.mine.veins = veins.filter((v) => v.id !== veinId);
     if (getPlayer().miningVeinId === veinId) {
-      getPlayer().miningVeinId = null;
       App.showNotification("Złoże zostało wyczerpane.");
     }
     return;
@@ -58,10 +56,6 @@ function onVeinUpdate({ veinId, depleted, newCharges }) {
 }
 
 function onVeinSpawned(data) {
-  if (!mineGameInitialized) {
-    setTimeout(() => onVeinSpawned(data), 100);
-    return;
-  }
   App.state.mine.veins.push(data.vein);
 }
 
@@ -131,19 +125,20 @@ function _autoMineTick(dt) {
 
   if (!me.miningVeinId) {
     _moveOrMine(me, vein, dt);
-  } else if (vein.id !== me.miningVeinId) {
-    SPEED = 0;
+  } else if (vein.id !== me.miningVeinId && !isWaiting) {
+    isWaiting = true;
     setTimeout(
       () => {
+        isWaiting = false;
         _cancelMining(me);
-        SPEED = 140;
       },
-      3000 + Math.random() * 3000,
+      2000 + Math.random() * 2000,
     );
   }
 }
 
 function _moveOrMine(me, vein, dt) {
+  if (isWaiting) return;
   const dist = Math.hypot(me.x - vein.x, me.y - vein.y);
 
   if (dist <= 20) {
