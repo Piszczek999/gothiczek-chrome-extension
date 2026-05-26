@@ -20,6 +20,7 @@ Jeśli wtyczka przestanie działać prawidłowo, należy:
 # Co dodaje to rozszerzenie
 
 - Autokopanie (nie zbiera skrzynek bo Pagan nie zezwolił)
+- Podgląd misji kopania bezpośrednio na stronie gdzie się kopie
 - Pokazuje dodatkową statystykę w zakładnie `Polowanie`. Przy każdym potworze widnieją dwie nowe statystyki:
   - Exp/godzinę (biorąc pod uwagę aktualny damage postaci)
   - Średnią zł/godzinę za łupy z potwora

@@ -28,6 +28,8 @@ function getExpPerHour(monsterId) {
 }
 
 function getHuntTime(monsterHp, characterDamage) {
+  if (App.state.character.skills.tropiciel)
+    return Math.ceil(monsterHp / characterDamage) * 1.5 + 5;
   return Math.ceil(monsterHp / characterDamage) * 1.5 + 6.5;
 }
 

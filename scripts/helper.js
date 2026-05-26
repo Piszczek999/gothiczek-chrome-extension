@@ -41,3 +41,13 @@ function hookFunction(target, functionName, callback, options = {}) {
 
   tryPatch();
 }
+
+function _oreItemName(itemId) {
+  var NAMES = {
+    brylka_rudy: "Bryłka rudy",
+    brylka_zlota: "Bryłka złota",
+    brylka_siarki: "Bryłka siarki",
+    brylka_wegla: "Bryłka węgla",
+  };
+  return NAMES[itemId] || itemId;
+}

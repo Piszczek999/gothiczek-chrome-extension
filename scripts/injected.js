@@ -19,12 +19,14 @@ function onSyncCharacter() {
 
 function onMineGame() {
   setTimeout(() => {
-    addPriorityPanel();
     renderAutoMineButton();
+    addPriorityPanel();
+    renderMineQuestContainer();
   }, 100);
 }
 
 function onMineGameInstant() {
   renderAutoMineButton();
   addPriorityPanel();
+  renderMineQuestContainer();
 }

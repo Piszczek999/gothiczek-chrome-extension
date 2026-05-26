@@ -12,6 +12,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         "scripts/bagSection.js",
         "scripts/totalGold.js",
         "scripts/mineGame.js",
+        "scripts/mineQuest.js",
         "scripts/injected.js",
       ],
       world: "MAIN",
