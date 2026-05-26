@@ -1,0 +1,52 @@
+.vein-priority-panel {
+  background-color: #2a1f14;
+  border: 1px solid #5c4420;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.vein-priority-title {
+  color: #c8b896;
+  border-bottom: 1px solid #5c4420;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.vein-priority-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vein-priority-item {
+  background-color: #201810;
+  border: 1px solid #5c4420;
+  color: #c8b896;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.vein-priority-item:hover {
+  background-color: #332817;
+}
+
+.vein-priority-item.drag-over {
+  background-color: #4b3719;
+  border-color: #c8b896;
+}
+
+.vein-rank {
+  color: #72562c;
+  min-width: 16px;
+}
+
+.vein-name {
+  color: #c8b896;
+}

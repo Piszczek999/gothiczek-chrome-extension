@@ -10,5 +10,12 @@
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.gothiczek.pl/*"],
+      "css": ["scripts/my_styles.css"],
+      "run_at": "document_end"
+    }
+  ]
 }
