@@ -22,7 +22,13 @@ function onMineGame() {
 }
 
 function onMineGameInstant() {
-  renderAutoMineButton();
-  addPriorityPanel();
+  //   renderAutoMineButton();
+  //   addPriorityPanel();
   renderMineQuestContainer();
 }
+
+// App.state.socket.on("tick_update", (data) => {
+//   if (data.expGained && !App.state.huntSwitchTimer) {
+//     App.startHunt(App.state.character.activity.monsterId);
+//   };
+// });

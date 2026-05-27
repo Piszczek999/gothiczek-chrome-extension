@@ -7,6 +7,7 @@ App.mineGame = (function () {
   var keys = {};
   var lastTickTime = 0;
   var rafId = null;
+  var lastMoveSent = 0;
   var entered = false;
 
   var VIRT_W = 800,
@@ -168,7 +169,7 @@ App.mineGame = (function () {
     socket.on("mine_state", _onState);
     socket.on("mine_player_joined", _onPlayerJoined);
     socket.on("mine_player_left", _onPlayerLeft);
-    socket.on("mine_player_moved", _onPlayerMoved);
+    socket.on("mine_players_moved", _onPlayersMoved);
     socket.on("mine_mining_started", _onMiningStarted);
     socket.on("mine_mining_cancelled", _onMiningCancelled);
     socket.on("mine_result", _onResult);
@@ -212,7 +213,7 @@ App.mineGame = (function () {
       socket.off("mine_state", _onState);
       socket.off("mine_player_joined", _onPlayerJoined);
       socket.off("mine_player_left", _onPlayerLeft);
-      socket.off("mine_player_moved", _onPlayerMoved);
+      socket.off("mine_players_moved", _onPlayersMoved);
       socket.off("mine_mining_started", _onMiningStarted);
       socket.off("mine_mining_cancelled", _onMiningCancelled);
       socket.off("mine_result", _onResult);
@@ -318,16 +319,28 @@ App.mineGame = (function () {
   }
 
   function _loop(now) {
+    rafId = requestAnimationFrame(_loop);
     if (!canvas || !ctx) return;
-    var dt = Math.min((now - lastTickTime) / 1000, 0.1);
+    var elapsed = now - lastTickTime;
+    if (elapsed < 15) return;
+    var dt = Math.min(elapsed / 1000, 0.1);
     lastTickTime = now;
     _tick(dt);
     _draw();
-    rafId = requestAnimationFrame(_loop);
   }
 
   function _tick(dt) {
     if (!state || !socket) return;
+    state.players.forEach(function (p) {
+      if (p.socketId === socket.id || p.miningVeinId) return;
+      if (p.targetX === undefined) {
+        p.targetX = p.x;
+        p.targetY = p.y;
+      }
+      var f = Math.min(1, 12 * dt);
+      p.x += (p.targetX - p.x) * f;
+      p.y += (p.targetY - p.y) * f;
+    });
     var me = _me();
     if (!me || me.miningVeinId) return;
     var dx = 0,
@@ -346,7 +359,11 @@ App.mineGame = (function () {
     me.y = Math.round(
       Math.max(8, Math.min(VIRT_H - 8, me.y + dy * SPEED * dt)),
     );
-    socket.emit("mine_move", { x: me.x, y: me.y });
+    var now = performance.now();
+    if (now - lastMoveSent >= 33) {
+      socket.emit("mine_move", { x: me.x, y: me.y });
+      lastMoveSent = now;
+    }
   }
 
   function _draw() {
@@ -559,15 +576,22 @@ App.mineGame = (function () {
   }
   function _onPlayerMoved(data) {
     if (!state) return;
+    if (data.socketId === socket.id) return;
     var p = state.players.find(function (p) {
       return p.socketId === data.socketId;
     });
     if (p) {
-      p.x = data.x;
-      p.y = data.y;
+      p.targetX = data.x;
+      p.targetY = data.y;
       p.miningVeinId = data.miningVeinId;
       p.miningStartTime = data.miningStartTime;
     }
+  }
+  function _onPlayersMoved(batch) {
+    if (!state) return;
+    batch.forEach(function (d) {
+      _onPlayerMoved(d);
+    });
   }
   function _onMiningStarted(data) {
     if (!state) return;
@@ -778,169 +802,3 @@ App.mineGame = (function () {
     mobileCancel: mobileCancel,
   };
 })();
-App.music = (function () {
-  var STORAGE_VOL = "mg_music_vol";
-  var STORAGE_STOP = "mg_music_stopped";
-  var audio = null;
-
-  function getVolume() {
-    var v = parseFloat(localStorage.getItem(STORAGE_VOL));
-    return isNaN(v) ? 0.2 : Math.max(0, Math.min(1, v));
-  }
-  function saveVolume(v) {
-    localStorage.setItem(STORAGE_VOL, String(v));
-  }
-  function isStopped() {
-    return localStorage.getItem(STORAGE_STOP) === "1";
-  }
-  function setStopped(v) {
-    localStorage.setItem(STORAGE_STOP, v ? "1" : "0");
-  }
-
-  function init() {
-    if (audio) return;
-    audio = new Audio("/dzwieki/Wyspa_Khorinis.mp3");
-    audio.loop = true;
-    audio.volume = getVolume();
-    if (!isStopped()) {
-      var p = audio.play();
-      if (p && p.catch) {
-        p.catch(function () {
-          var unlock = function () {
-            if (!isStopped()) audio.play().catch(function () {});
-            document.removeEventListener("click", unlock);
-            document.removeEventListener("keydown", unlock);
-          };
-          document.addEventListener("click", unlock, { once: true });
-          document.addEventListener("keydown", unlock, { once: true });
-        });
-      }
-    }
-    App.music._audio = audio;
-  }
-
-  function play() {
-    if (!audio) return;
-    setStopped(false);
-    audio.play().catch(function () {});
-    App.music._updateUI();
-  }
-
-  function pause() {
-    if (!audio) return;
-    setStopped(true);
-    audio.pause();
-    App.music._updateUI();
-  }
-
-  function stop() {
-    if (!audio) return;
-    setStopped(true);
-    audio.pause();
-    audio.currentTime = 0;
-    App.music._updateUI();
-  }
-
-  function setVolume(v) {
-    v = Math.max(0, Math.min(1, parseFloat(v) || 0));
-    saveVolume(v);
-    if (audio) audio.volume = v;
-    App.music._updateUI();
-  }
-
-  function isPlaying() {
-    return audio && !audio.paused;
-  }
-
-  function _updateUI() {
-    var btn = document.getElementById("music-play-btn");
-    var slider = document.getElementById("music-vol-slider");
-    var volLabel = document.getElementById("music-vol-label");
-    if (btn) btn.textContent = isPlaying() ? "⏸ Pauza" : "▶ Odtwórz";
-    if (slider) slider.value = String(Math.round(getVolume() * 100));
-    if (volLabel) volLabel.textContent = Math.round(getVolume() * 100) + "%";
-  }
-
-  return {
-    init: init,
-    play: play,
-    pause: pause,
-    stop: stop,
-    setVolume: setVolume,
-    isPlaying: isPlaying,
-    _updateUI: _updateUI,
-    _audio: null,
-  };
-})();
-
-App.renderTickets = async function () {
-  const container = document.getElementById("tickets-container");
-  if (!container) return;
-  container.innerHTML =
-    '<div style="color:var(--text3);padding:12px">Ładowanie zgłoszeń...</div>';
-  App.state.ticketUnread = false;
-  const navBtn = document.getElementById("nav-tickets");
-  if (navBtn) navBtn.classList.remove("ticket-unread");
-  try {
-    const r = await fetch("/api/game/tickets", {
-      headers: { Authorization: "Bearer " + localStorage.getItem("mg_token") },
-    });
-    const data = await r.json();
-    if (!r.ok) {
-      container.innerHTML =
-        '<div class="auth-error">' +
-        esc(data.error || "Błąd serwera") +
-        "</div>";
-      return;
-    }
-    const tickets = Array.isArray(data) ? data : data.tickets || [];
-    let html = "";
-    if (tickets.length > 0) {
-      html += '<div class="ticket-list">';
-      tickets.forEach(function (t) {
-        const date = new Date(t.createdAt).toLocaleDateString("pl-PL");
-        const statusClass =
-          t.status === "open" ? "ticket-status-open" : "ticket-status-closed";
-        const statusLabel = t.status === "open" ? "Otwarte" : "Zamknięte";
-        html +=
-          '<div class="ticket-item" onclick="App.openTicket(\'' +
-          esc(t.id) +
-          "')\">" +
-          '<div class="ticket-item-header">' +
-          '<span class="ticket-item-subject">' +
-          esc(t.subject) +
-          "</span>" +
-          '<span class="' +
-          statusClass +
-          '">' +
-          statusLabel +
-          "</span>" +
-          "</div>" +
-          '<div class="ticket-item-meta">' +
-          '<span class="ticket-date">' +
-          date +
-          "</span>" +
-          (t.hasUnreadReply
-            ? '<span class="ticket-unread-dot">● Nowa odpowiedź</span>'
-            : "") +
-          "</div>" +
-          "</div>";
-      });
-      html += "</div>";
-    } else {
-      html +=
-        '<div class="ticket-empty">Nie masz jeszcze żadnych zgłoszeń.</div>';
-    }
-    html +=
-      '<div class="ticket-new-form">' +
-      '<div class="ticket-form-title">Napisz nowe zgłoszenie</div>' +
-      '<div class="form-group"><label>Temat</label><input type="text" id="ticket-subject-input" maxlength="80" placeholder="Krótki opis problemu" class="ticket-input"></div>' +
-      '<div class="form-group"><label>Wiadomość</label><textarea id="ticket-body-input" maxlength="1000" placeholder="Opisz szczegółowo swój problem..." class="ticket-textarea" rows="5"></textarea></div>' +
-      '<button class="btn btn-primary" onclick="App.sendTicket()">Wyślij zgłoszenie</button>' +
-      "</div>";
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML =
-      '<div class="auth-error">Błąd połączenia z serwerem.</div>';
-  }
-};

@@ -11,9 +11,7 @@ connectSocketHandlers();
 function renderMineQuestContainer() {
   if (!App.state.inMine) return;
 
-  const controls = document.querySelector(
-    "#mine-game-root > div > div.mine-mobile-controls",
-  );
+  const controls = document.querySelector("#mine-game-root > div");
   if (!controls) {
     App.showNotification("Nie można znaleźć panelu kontrolnego w kopalni.");
     return;
@@ -23,7 +21,13 @@ function renderMineQuestContainer() {
   questPanel.id = "mine-quest-container";
   questPanel.className = "vein-priority-panel";
 
-  controls.appendChild(questPanel);
+  const index = 3; // insert at position 3
+
+  if (index >= controls.children.length) {
+    controls.appendChild(questPanel);
+  } else {
+    controls.insertBefore(questPanel, controls.children[index]);
+  }
 
   updateMineQuest();
 }
