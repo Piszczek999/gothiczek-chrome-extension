@@ -4,12 +4,23 @@ Ext.mineGame = {
 
   init() {
     Ext.mineGame.mineClosest = false;
+    Ext.mineGame.setFakeAudio();
+
     hookFunction(App.mineGame, "_doEnter", Ext.mineGame.connect, {
       patchFlag: "__mineGame",
     });
     hookFunction(App.mineGame, "leave", Ext.mineGame.disconnect, {
       patchFlag: "__mineGame",
     });
+  },
+
+  // Important to force app to work in the background
+  setFakeAudio() {
+    const audio = new Audio("/dzwieki/Wyspa_Khorinis.mp3");
+    audio.loop = true;
+    audio.volume = 0.01;
+    document.addEventListener("click", () => audio.play(), { once: true });
+    document.addEventListener("keydown", () => audio.play(), { once: true });
   },
 
   connect() {

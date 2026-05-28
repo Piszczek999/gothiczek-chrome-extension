@@ -417,9 +417,6 @@ function replaceAppMineGame() {
       var dirX = vdx / vdist;
       var dirY = vdy / vdist;
       var stepDist = SPEED * dt;
-      console.log("vdist:", vdist);
-      console.log("stepDist:", stepDist);
-      console.log("dt:", dt);
       if (stepDist >= vdist) {
         me.x = targetX;
         me.y = targetY;
@@ -433,7 +430,6 @@ function replaceAppMineGame() {
       }
       var nowMs = performance.now();
       if (nowMs - lastMoveSent >= 33) {
-        console.log("emit movement");
         socket.emit("mine_move", { x: me.x, y: me.y });
         lastMoveSent = nowMs;
       }
