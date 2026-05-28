@@ -46,6 +46,7 @@ const App = (function () {
     huntSwitchTimer: null,
     inMine: false,
     craftingRecipes: [],
+    craftTab: "materials",
     ticketUnread: false,
     respawnCountdownInterval: null,
   };
@@ -779,6 +780,28 @@ const App = (function () {
       App.state.socket.on("tavern_error", function (data) {
         if (data && data.error) App.showNotification(data.error, "error");
       });
+      App.state.socket.on("titles_data", function (data) {
+        App.state.titlesData = data;
+        App.state._titleCooldownExpiry =
+          Date.now() + (data.cooldownRemainingMs || 0);
+        if (App.state.currentSection === "titles") App._renderTitlesUI();
+      });
+      App.state.socket.on("title_changed", function (data) {
+        var char = App.state.character;
+        if (char) char.equippedTitle = data.equippedTitle;
+        App.state._titleCooldownExpiry =
+          Date.now() + (data.cooldownMs || 60000);
+        if (App.state.currentSection === "titles") App.renderTitles();
+        var label = data.titleName ? "(" + data.titleName + ")" : "brak";
+        App.showNotification("Tytuł zmieniony: " + label, "success");
+      });
+      App.state.socket.on("title_error", function (data) {
+        if (data && data.error) App.showNotification(data.error, "error");
+      });
+      App.state.socket.on("mine_player_title_changed", function (data) {
+        if (!App.mineGame) return;
+        App.mineGame._onPlayerTitleChanged(data);
+      });
       App.state.socket.on("prison_update", function (data) {
         App.state.prisonData = data.prisoners || [];
         if (App.state.imprisoned) {
@@ -889,6 +912,8 @@ const App = (function () {
     App.updateCharacterUI(char);
     if (data.levelUps && data.levelUps > 0) {
       App.showNotification("Awans na poziom " + char.level + "!", "levelup");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     }
     if (char.activity && char.activity.type === "hunting") {
       if (App.state.respawnUntil && App.state.respawnUntil <= Date.now()) {
@@ -1073,6 +1098,8 @@ const App = (function () {
       }
       if (App.state.currentSection === "arena") App.renderArena();
     }
+    if (data.equippedTitle !== undefined)
+      char.equippedTitle = data.equippedTitle;
     App.updateCharacterUI(char);
     if (data.offlineEvents && data.offlineEvents.length > 0)
       App.showOfflineSummary(data.offlineEvents);
@@ -1211,6 +1238,7 @@ const App = (function () {
       "alchemy",
       "bag",
       "rank",
+      "titles",
       "options",
       "prison",
       "arena",
@@ -1240,6 +1268,7 @@ const App = (function () {
     if (name === "alchemy") App.renderAlchemy();
     if (name === "bag") App.renderBag();
     if (name === "rank") App.renderRanking(true);
+    if (name === "titles") App.renderTitles();
     if (name === "daily") App.renderDailyReward();
     if (name === "options") App.renderOptions();
     if (name === "prison") App.renderPrison();
@@ -1251,7 +1280,8 @@ const App = (function () {
   };
 
   App.leaveMine = function () {
-    App.showSection("foraging");
+    App.mineGame.leave();
+    App.mineGame.enter();
   };
 
   App.renderActivityDisplay = function () {
@@ -3417,6 +3447,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Założono przedmiot.", "success");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3444,6 +3476,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Zdjęto przedmiot.", "default");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3471,6 +3505,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Założono pierścień.", "success");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3497,6 +3533,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Zdjęto pierścień.", "default");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3524,6 +3562,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Założono amulet.", "success");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3550,6 +3590,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Zdjęto amulet.", "default");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3577,6 +3619,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Założono pas.", "success");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3603,6 +3647,8 @@ const App = (function () {
       App.updateCharacterUI(App.state.character);
       App.renderBag();
       App.showNotification("Zdjęto pas.", "default");
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -3674,6 +3720,183 @@ const App = (function () {
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
+  };
+
+  App.renderTitles = function () {
+    var socket = App.state.socket;
+    if (socket) socket.emit("titles_get");
+    App._renderTitlesUI();
+  };
+
+  App._renderTitlesUI = function () {
+    var container = document.getElementById("titles-container");
+    if (!container) return;
+    var char = App.state.character;
+    if (!char) {
+      container.innerHTML =
+        '<div style="color:var(--text3)">Brak danych postaci.</div>';
+      return;
+    }
+    if (!App.state.titlesData) {
+      container.innerHTML =
+        '<div style="color:var(--text3);padding:16px">Ładowanie…</div>';
+      return;
+    }
+    var td = App.state.titlesData;
+    var equipped = char.equippedTitle || null;
+    var unlocked = td.unlocked || [];
+    var all = td.all || [];
+    var now = Date.now();
+    var cooldownLeft = Math.max(
+      0,
+      Math.ceil(((App.state._titleCooldownExpiry || 0) - now) / 1000),
+    );
+
+    var CATEGORIES = [
+      {
+        label: "⛏ Tytuły górnicze",
+        ids: ["kopacz", "kret", "szkodnik", "nadzorca_kopalni"],
+      },
+      {
+        label: "⚔ Tytuły poziomowe",
+        ids: ["bezimienny", "cien", "straznik", "magnat"],
+      },
+      {
+        label: "🏟 Tytuły areny",
+        ids: ["nowicjusz", "straznik_swiatynny", "guru"],
+      },
+      {
+        label: "✨ Tytuły umiejętności",
+        ids: ["adept", "uczony", "mag_ognia", "arcymag_ognia"],
+      },
+      {
+        label: "👥 Tytuły wybrane przez społeczność",
+        ids: ["cwel", "gej", "wrzod", "piecowy"],
+      },
+    ];
+
+    var REQ_LABELS = {
+      kopacz: "Wydobycie Poz. 10",
+      kret: "Wydobycie Poz. 20",
+      szkodnik: "Wydobycie Poz. 30",
+      nadzorca_kopalni: "Wydobycie Poz. 40",
+      bezimienny: "Postać Poz. 20",
+      cien: "Postać Poz. 50",
+      straznik: "Postać Poz. 80",
+      magnat: "Postać Poz. 100",
+      nowicjusz: "Siła areny > 100",
+      straznik_swiatynny: "Siła areny > 300",
+      guru: "Siła areny > 600",
+      adept: "2 nauczone umiejętności",
+      uczony: "4 nauczone umiejętności",
+      mag_ognia: "6 nauczonych umiejętności",
+      arcymag_ognia: "8 nauczonych umiejętności",
+      cwel: "Dostępny dla każdego",
+      gej: "Dostępny dla każdego",
+      wrzod: "Dostępny dla każdego",
+      piecowy: "Dostępny dla każdego",
+    };
+
+    var cooldownHtml =
+      cooldownLeft > 0
+        ? '<div class="titles-cooldown">⏳ Następna zmiana tytułu za <strong>' +
+          cooldownLeft +
+          "</strong> sekund" +
+          (cooldownLeft === 1 ? "ę" : "y") +
+          "</div>"
+        : "";
+
+    var equippedHtml = equipped
+      ? '<div class="titles-equipped-bar">Aktywny tytuł: <span class="titles-equipped-name">' +
+        esc(_getTitleNameClient(all, equipped)) +
+        '</span> <button class="btn btn-secondary titles-remove-btn" onclick="App.doSetTitle(null)" ' +
+        (cooldownLeft > 0 ? "disabled" : "") +
+        ">Zdejmij tytuł</button></div>"
+      : '<div class="titles-equipped-bar">Aktywny tytuł: <span style="color:var(--text3)">brak</span></div>';
+
+    var categoriesHtml = CATEGORIES.map(function (cat) {
+      var rows = cat.ids
+        .map(function (tid) {
+          var tDef = all.find(function (x) {
+            return x.id === tid;
+          });
+          if (!tDef) return "";
+          var isUnlocked = unlocked.indexOf(tid) !== -1;
+          var isEquipped = equipped === tid;
+          var rowClass = isEquipped
+            ? "titles-row titles-row-equipped"
+            : isUnlocked
+              ? "titles-row titles-row-unlocked"
+              : "titles-row titles-row-locked";
+          var statusHtml = isEquipped
+            ? '<span class="titles-status titles-status-equipped">✓ Aktywny</span>'
+            : isUnlocked
+              ? '<span class="titles-status titles-status-unlocked">Odblokowany</span>'
+              : '<span class="titles-status titles-status-locked">🔒 ' +
+                (REQ_LABELS[tid] || "") +
+                "</span>";
+          var btnHtml =
+            isUnlocked && !isEquipped
+              ? '<button class="btn btn-primary titles-select-btn" onclick="App.doSetTitle(\'' +
+                tid +
+                "')\" " +
+                (cooldownLeft > 0 ? "disabled" : "") +
+                ">Wybierz</button>"
+              : "";
+          return (
+            '<div class="' +
+            rowClass +
+            '">' +
+            '<div class="titles-row-name">' +
+            esc(tDef.name) +
+            "</div>" +
+            '<div class="titles-row-req">' +
+            statusHtml +
+            "</div>" +
+            btnHtml +
+            "</div>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="titles-category"><div class="titles-category-label">' +
+        cat.label +
+        "</div>" +
+        rows +
+        "</div>"
+      );
+    }).join("");
+
+    container.innerHTML =
+      equippedHtml +
+      cooldownHtml +
+      '<div class="titles-list">' +
+      categoriesHtml +
+      "</div>";
+
+    if (cooldownLeft > 0) {
+      if (App.state._titleCooldownTimer)
+        clearTimeout(App.state._titleCooldownTimer);
+      App.state._titleCooldownTimer = setTimeout(
+        function () {
+          if (App.state.currentSection === "titles") App._renderTitlesUI();
+        },
+        cooldownLeft * 1000 + 100,
+      );
+    }
+  };
+
+  function _getTitleNameClient(all, titleId) {
+    var t = (all || []).find(function (x) {
+      return x.id === titleId;
+    });
+    return t ? t.name : titleId;
+  }
+
+  App.doSetTitle = function (titleId) {
+    var socket = App.state.socket;
+    if (!socket) return;
+    socket.emit("title_set", { titleId: titleId });
   };
 
   App.setRankTab = function (tab) {
@@ -4668,7 +4891,7 @@ const App = (function () {
       id: "activity",
       label: "⚔ Aktywności",
       test: function (m) {
-        return /wyruszył na polowanie|stanął na warcie|wyruszył na zbieractwo|zakończył zbieractwo|zakończył służbę|rozpoczął warzenie|ukończył warzenie|udał się do kopalni|skrzynię w kopalni/.test(
+        return /wyruszył na polowanie|stanął na warcie|wyruszył na zbieractwo|zakończył zbieractwo|zakończył służbę|rozpoczął warzenie|ukończył warzenie|udał się do|skrzynię w kopalni/.test(
           m,
         );
       },
@@ -4975,7 +5198,7 @@ const App = (function () {
           '<div class="farm-buy-box">' +
           '<div class="farm-buy-icon">🌱</div>' +
           '<div class="farm-buy-title">Kup działkę rolną</div>' +
-          '<div class="farm-buy-desc">Zakup działkę 5×5 w okolicach Khorinis. Siej nasiona i zbieraj plony — uprawa działa niezależnie od polowania i warty.</div>' +
+          '<div class="farm-buy-desc">Zakup działkę 3×3 w okolicach Khorinis. Siej nasiona i zbieraj plony — uprawa działa niezależnie od polowania i warty.</div>' +
           '<div class="farm-buy-price">Koszt: <strong style="color:var(--gold)">300 złota</strong> (masz: ' +
           gold +
           " zł)</div>" +
@@ -4995,7 +5218,8 @@ const App = (function () {
     var container = document.getElementById("farm-container");
     if (!container || !App.state.farmPlots) return;
     var elapsed = Date.now() - (App.state.farmFetchTime || Date.now());
-    var html = '<div class="farm-grid">';
+    var readyCount = 0;
+    var gridHtml = '<div class="farm-grid">';
     App.state.farmPlots.forEach(function (plot, i) {
       var state = plot.state;
       var remainingMs = plot.remainingMs || 0;
@@ -5011,7 +5235,8 @@ const App = (function () {
           progress = 1 - remainingMs / growthMs;
         }
       }
-      html += App.renderPlotCell(
+      if (state === "ready") readyCount++;
+      gridHtml += App.renderPlotCell(
         {
           state: state,
           remainingMs: remainingMs,
@@ -5022,13 +5247,14 @@ const App = (function () {
         i,
       );
     });
-    html += "</div>";
-    var existing = container.querySelector(".farm-grid");
-    if (existing) {
-      existing.outerHTML = html;
-    } else {
-      container.innerHTML = html;
+    gridHtml += "</div>";
+    if (readyCount >= 2) {
+      gridHtml +=
+        '<div style="margin-top:10px;text-align:center"><button class="btn btn-primary btn-sm" onclick="App.harvestAll()">🌾 Zbierz wszystko (' +
+        readyCount +
+        ")</button></div>";
     }
+    container.innerHTML = gridHtml;
   };
 
   App.renderPlotCell = function (plot, idx) {
@@ -5223,6 +5449,36 @@ const App = (function () {
           ? gd.items[data.harvested].name
           : data.harvested || "plon";
       App.showNotification("Zebrano: " + itemName + "!", "success");
+      App.renderFarmGrid();
+    } catch (e) {
+      App.showNotification("Błąd połączenia", "error");
+    }
+  };
+
+  App.harvestAll = async function () {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/game/farm/harvest-all", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      if (data.inventory && App.state.character)
+        App.state.character.inventory = data.inventory;
+      if (data.plots) {
+        App.state.farmPlots = data.plots;
+        App.state.farmFetchTime = Date.now();
+      }
+      var names = (data.harvested || [])
+        .map(function (h) {
+          return h.qty + "x " + h.name;
+        })
+        .join(", ");
+      App.showNotification("Zebrano: " + names, "success");
       App.renderFarmGrid();
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
@@ -5433,7 +5689,13 @@ const App = (function () {
       if (mPill) mPill.style.display = "none";
       App.showNotification("Efekt Mikstury Kopacza wygasł.", "default");
       if (App.state.currentSection === "alchemy") App.renderAlchemy();
+      if (App.state.inMine) App.mineGame.refreshSkillInfo();
     }
+  };
+
+  App.setCraftTab = function (tab) {
+    App.state.craftTab = tab;
+    App.renderCrafting();
   };
 
   App.renderCrafting = function () {
@@ -5451,6 +5713,31 @@ const App = (function () {
     var rings = gd ? gd.rings || [] : [];
     var amulets = gd ? gd.amulets || [] : [];
     var belts = gd ? gd.belts || [] : [];
+    var tab = App.state.craftTab || "materials";
+
+    var ringIds = new Set(
+      rings.map(function (r) {
+        return r.id;
+      }),
+    );
+    var amuletIds = new Set(
+      amulets.map(function (a) {
+        return a.id;
+      }),
+    );
+    var beltIds = new Set(
+      belts.map(function (b) {
+        return b.id;
+      }),
+    );
+
+    function recipeTab(recipe) {
+      var outId = recipe.outputs[0] && recipe.outputs[0].itemId;
+      if (ringIds.has(outId)) return "rings";
+      if (amuletIds.has(outId)) return "amulets";
+      if (beltIds.has(outId)) return "belts";
+      return "materials";
+    }
 
     function getItemName(itemId) {
       var r = rings.find(function (x) {
@@ -5475,14 +5762,39 @@ const App = (function () {
       return inv ? inv.quantity : 0;
     }
 
-    if (recipes.length === 0) {
-      container.innerHTML =
-        '<div class="crafting-empty">Brak dostępnych przepisów.</div>';
+    var TABS = [
+      { id: "materials", label: "🪨 Materiały" },
+      { id: "rings", label: "💍 Pierścienie" },
+      { id: "amulets", label: "📿 Amulety" },
+      { id: "belts", label: "🪢 Pasy" },
+    ];
+
+    var html = '<div class="rank-tab-bar" style="margin-bottom:12px">';
+    TABS.forEach(function (t) {
+      html +=
+        '<button class="rank-tab-btn' +
+        (tab === t.id ? " active" : "") +
+        '" onclick="App.setCraftTab(\'' +
+        t.id +
+        "')\">" +
+        t.label +
+        "</button>";
+    });
+    html += "</div>";
+
+    var filtered = recipes.filter(function (r) {
+      return recipeTab(r) === tab;
+    });
+
+    if (filtered.length === 0) {
+      html +=
+        '<div class="crafting-empty">Brak przepisów w tej kategorii.</div>';
+      container.innerHTML = html;
       return;
     }
 
-    var html = '<div class="crafting-list">';
-    recipes.forEach(function (recipe) {
+    html += '<div class="crafting-list">';
+    filtered.forEach(function (recipe) {
       var canCraft = recipe.inputs.every(function (inp) {
         return getQty(inp.itemId) >= inp.quantity;
       });
@@ -5534,12 +5846,19 @@ const App = (function () {
               : outBelt && outBelt.damageBonus
                 ? outBelt.damageBonus
                 : 0;
+        var owned = getQty(out.itemId);
         html += '<div class="crafting-mat">';
         html +=
           '<span class="crafting-mat-name">' +
           esc(getItemName(out.itemId)) +
           "</span>";
-        html += '<span class="crafting-mat-qty">x' + out.quantity + "</span>";
+        html +=
+          '<span class="crafting-mat-qty">x' +
+          out.quantity +
+          (owned > 0
+            ? ' <span style="color:var(--text3)">(masz: ' + owned + ")</span>"
+            : "") +
+          "</span>";
         html += "</div>";
         if (outBonus) {
           html +=
@@ -5927,12 +6246,14 @@ const App = (function () {
         );
       else if (effect.type === "growthPotion")
         App.showNotification("Wszystkie zioła na działce dojrzały!", "success");
-      else if (effect.type === "minerPotion")
+      else if (effect.type === "minerPotion") {
         App.showNotification(
           "Mikstura Kopacza aktywna! Pozostało: " +
             App.formatDuration(Math.max(0, effect.expiresAt - Date.now())),
           "levelup",
         );
+        if (App.state.inMine) App.mineGame.refreshSkillInfo();
+      }
     } catch (e) {
       App.showNotification("Błąd połączenia", "error");
     }
@@ -6011,6 +6332,15 @@ const App = (function () {
       });
     }
     App._applyTavernChatVisibility();
+    document.addEventListener("visibilitychange", function () {
+      if (
+        document.visibilityState === "visible" &&
+        App.state.tavernChatAutoScroll
+      ) {
+        var el = document.getElementById("tavern-chat-messages");
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+    });
   };
 
   App._applyTavernChatVisibility = function () {
@@ -6063,11 +6393,15 @@ const App = (function () {
         var nameStyle = rankColor
           ? ' style="color:' + esc(rankColor) + '"'
           : "";
+        var titleHtml = m.title
+          ? '<span class="tav-title">(' + esc(m.title) + ")</span> "
+          : "";
         return (
           '<div class="tav-msg-line">' +
           '<span class="tav-time">[' +
           esc(m.time) +
           "]</span> " +
+          titleHtml +
           '<span class="tav-name"' +
           nameStyle +
           ">" +
@@ -6166,11 +6500,15 @@ const App = (function () {
           App.state.tavernRanks[m.userId].color) ||
         null;
       var nameStyle = rankColor ? ' style="color:' + esc(rankColor) + '"' : "";
+      var titleHtml = m.title
+        ? '<span class="tav-title">(' + esc(m.title) + ")</span> "
+        : "";
       line.className = "tav-msg-line";
       line.innerHTML =
         '<span class="tav-time">[' +
         esc(m.time) +
         "]</span> " +
+        titleHtml +
         '<span class="tav-name"' +
         nameStyle +
         ">" +
@@ -6328,20 +6666,44 @@ const App = (function () {
       ctx = null;
     var state = null;
     var skillInfo = null;
-    var keys = {};
     var lastTickTime = 0;
     var rafId = null;
     var lastMoveSent = 0;
     var entered = false;
+    var mineType = "main";
+    var targetMaterialType = null;
+    var autoActive = false;
+    var startMiningSent = false;
 
     var VIRT_W = 800,
       VIRT_H = 500;
     var VEIN_R = 18;
     var SPEED = 140;
     var MINING_DURATION_MS = 30000;
-    var CHEST_INTERACT_R = 40;
-    var chest = null;
-    var autoMiningVeinId = null;
+
+    var MINE_MATERIAL_TYPES = {
+      main: ["ore", "gold", "sulphur", "coal"],
+      shaft: ["sulphur", "iron"],
+      bottom: ["black_ore", "gold"],
+    };
+
+    var MATERIAL_BTN_LABELS = {
+      ore: "⛏ Ruda",
+      gold: "✨ Złoto",
+      sulphur: "🔥 Siarka",
+      coal: "◼ Węgiel",
+      iron: "🔩 Żelazo",
+      black_ore: "🖤 Czarna ruda",
+    };
+
+    var MATERIAL_NAMES_PL = {
+      ore: "rudy",
+      gold: "złota",
+      sulphur: "siarki",
+      coal: "węgla",
+      iron: "żelaza",
+      black_ore: "czarnej rudy",
+    };
 
     var bgImage = (function () {
       var img = new Image();
@@ -6354,6 +6716,8 @@ const App = (function () {
       gold: { small: "#7a5a00", normal: "#b88a00", rich: "#e8c020" },
       sulphur: { small: "#5a3a00", normal: "#a06000", rich: "#e08820" },
       coal: { small: "#282828", normal: "#404040", rich: "#5a5a5a" },
+      iron: { small: "#5a2a0a", normal: "#8b4010", rich: "#c05a18" },
+      black_ore: { small: "#1a0a2a", normal: "#2e0f4a", rich: "#4a1870" },
     };
     var VEIN_LABELS = {
       ore: {
@@ -6376,6 +6740,16 @@ const App = (function () {
         normal: "Złoże węgla",
         rich: "Bogate złoże węgla",
       },
+      iron: {
+        small: "Małe złoże żelaza",
+        normal: "Złoże żelaza",
+        rich: "Bogate złoże żelaza",
+      },
+      black_ore: {
+        small: "Małe złoże czarnej rudy",
+        normal: "Złoże czarnej rudy",
+        rich: "Bogate złoże czarnej rudy",
+      },
     };
 
     var toastMsg = "",
@@ -6386,6 +6760,8 @@ const App = (function () {
     }
 
     function _buildLobbyHTML() {
+      var mLevel =
+        (App.state.character && App.state.character.miningLevel) || 1;
       var skillLine = "";
       if (skillInfo) {
         skillLine =
@@ -6399,14 +6775,104 @@ const App = (function () {
           skillInfo.chance +
           "%</strong></div>";
       }
+      var shaftOk = mLevel >= 20;
+      var bottomOk = mLevel >= 35;
       return (
         '<div class="mine-lobby">' +
-        '<div class="mine-lobby-title">⛏ Wejście do kopalni</div>' +
+        '<div class="mine-lobby-title">⛏ Kopalnia w Khorinis</div>' +
         skillLine +
-        '<div class="mine-lobby-keys">Ruch: <strong>WASD / ↑↓←→</strong> &nbsp;|&nbsp; Kop: <strong>E / Spacja</strong> — auto-kopie aż do wyczerpania złoża &nbsp;|&nbsp; Anuluj: <strong>ESC / Q</strong></div>' +
-        '<button class="btn btn-primary" onclick="App.mineGame._doEnter()">⛏ Wejdź do kopalni</button>' +
+        '<div class="mine-lobby-btns">' +
+        '<div class="mine-lobby-entry">' +
+        '<button class="btn btn-primary" onclick="App.mineGame._doEnter(\'main\')">⛏ Wejdź do głównej kopalni</button>' +
+        '<div class="mine-lobby-desc">Ruda · Złoto · Siarka · Węgiel</div>' +
+        "</div>" +
+        '<div class="mine-lobby-entry">' +
+        '<button class="btn btn-primary" ' +
+        (shaftOk ? "" : "disabled") +
+        " onclick=\"App.mineGame._doEnter('shaft')\">" +
+        (shaftOk ? "⛏" : "🔒") +
+        " Wejdź do bocznego szybu kopalni</button>" +
+        '<div class="mine-lobby-desc' +
+        (shaftOk ? "" : " mine-lobby-locked") +
+        '">Siarka · Żelazo' +
+        (shaftOk
+          ? ""
+          : " — wymagany poziom wydobycia 20 (masz: " + mLevel + ")") +
+        "</div>" +
+        "</div>" +
+        '<div class="mine-lobby-entry">' +
+        '<button class="btn btn-primary" ' +
+        (bottomOk ? "" : "disabled") +
+        " onclick=\"App.mineGame._doEnter('bottom')\">" +
+        (bottomOk ? "⛏" : "🔒") +
+        " Zejdź na dno kopalni</button>" +
+        '<div class="mine-lobby-desc' +
+        (bottomOk ? "" : " mine-lobby-locked") +
+        '">Czarna ruda · Złoto' +
+        (bottomOk
+          ? ""
+          : " — wymagany poziom wydobycia 35 (masz: " + mLevel + ")") +
+        "</div>" +
+        "</div>" +
+        "</div>" +
         "</div>"
       );
+    }
+
+    function _buildAutoPanel() {
+      var types = MINE_MATERIAL_TYPES[mineType] || [];
+      var html = '<div class="mine-auto-target-btns">';
+      types.forEach(function (t) {
+        var isSel = targetMaterialType === t;
+        var dis = autoActive ? " disabled" : "";
+        html +=
+          '<button class="btn mine-target-btn' +
+          (isSel ? " mine-target-btn-active" : "") +
+          '"' +
+          dis +
+          " onclick=\"App.mineGame.selectMaterial('" +
+          t +
+          "')\">" +
+          (MATERIAL_BTN_LABELS[t] || t) +
+          "</button>";
+      });
+      html += '</div><div class="mine-auto-actions">';
+      if (!autoActive) {
+        html +=
+          '<button class="btn btn-primary mine-auto-start-btn"' +
+          (targetMaterialType ? "" : " disabled") +
+          ' onclick="App.mineGame.startAuto()">▶ Rozpocznij wydobycie</button>';
+      } else {
+        html +=
+          '<button class="btn btn-danger mine-auto-start-btn" onclick="App.mineGame.stopAuto()">⏹ Zakończ wydobycie</button>';
+      }
+      html += "</div>";
+      var statusMsg = "";
+      if (!targetMaterialType) {
+        statusMsg = "Wybierz złoże aby rozpocząć";
+      } else if (!autoActive) {
+        statusMsg =
+          "Cel: <strong>" +
+          (MATERIAL_NAMES_PL[targetMaterialType] || targetMaterialType) +
+          "</strong> — kliknij Rozpocznij wydobycie";
+      } else {
+        var me = _me();
+        if (me && me.miningVeinId) {
+          statusMsg = '<strong style="color:#ffd700">⛏ Kopanie…</strong>';
+        } else if (startMiningSent) {
+          statusMsg = '<span style="color:#aad4ff">⛏ Zaczynam kopanie…</span>';
+        } else {
+          var tv =
+            me && state
+              ? _nearestVeinOfType(me.x, me.y, targetMaterialType)
+              : null;
+          statusMsg = tv
+            ? '<span style="color:#aad4ff">→ Idę do złoża…</span>'
+            : '<span style="color:#888">⏳ Czekam na pojawienie się złoża…</span>';
+        }
+      }
+      html += '<div class="mine-auto-status">' + statusMsg + "</div>";
+      return html;
     }
 
     function _buildGameHTML() {
@@ -6414,26 +6880,17 @@ const App = (function () {
         '<div class="mine-root">' +
         '<div class="mine-hud-bar"><span class="mine-hud-info" id="mine-hud-info"></span></div>' +
         '<div class="mine-canvas-wrap" id="mine-canvas-wrap"><canvas id="mine-canvas" width="800" height="500"></canvas><div class="mine-result-toast" id="mine-toast" style="opacity:0"></div></div>' +
-        '<div class="mine-mobile-controls">' +
-        '<div class="mine-dpad">' +
-        '<div class="mine-dpad-row"><button class="mine-dpad-btn" ontouchstart="App.mineGame.keyDown(\'ArrowUp\')" ontouchend="App.mineGame.keyUp(\'ArrowUp\')" onmousedown="App.mineGame.keyDown(\'ArrowUp\')" onmouseup="App.mineGame.keyUp(\'ArrowUp\')" onmouseleave="App.mineGame.keyUp(\'ArrowUp\')">▲</button></div>' +
-        '<div class="mine-dpad-row">' +
-        '<button class="mine-dpad-btn" ontouchstart="App.mineGame.keyDown(\'ArrowLeft\')" ontouchend="App.mineGame.keyUp(\'ArrowLeft\')" onmousedown="App.mineGame.keyDown(\'ArrowLeft\')" onmouseup="App.mineGame.keyUp(\'ArrowLeft\')" onmouseleave="App.mineGame.keyUp(\'ArrowLeft\')">◀</button>' +
-        '<div class="mine-dpad-center">⛏</div>' +
-        '<button class="mine-dpad-btn" ontouchstart="App.mineGame.keyDown(\'ArrowRight\')" ontouchend="App.mineGame.keyUp(\'ArrowRight\')" onmousedown="App.mineGame.keyDown(\'ArrowRight\')" onmouseup="App.mineGame.keyUp(\'ArrowRight\')" onmouseleave="App.mineGame.keyUp(\'ArrowRight\')">▶</button>' +
+        '<div class="mine-auto-panel" id="mine-auto-panel">' +
+        _buildAutoPanel() +
         "</div>" +
-        '<div class="mine-dpad-row"><button class="mine-dpad-btn" ontouchstart="App.mineGame.keyDown(\'ArrowDown\')" ontouchend="App.mineGame.keyUp(\'ArrowDown\')" onmousedown="App.mineGame.keyDown(\'ArrowDown\')" onmouseup="App.mineGame.keyUp(\'ArrowDown\')" onmouseleave="App.mineGame.keyUp(\'ArrowDown\')">▼</button></div>' +
-        "</div>" +
-        '<div class="mine-action-btns">' +
-        '<button class="btn btn-primary mine-action-btn" ontouchstart="App.mineGame.mobileKop()" onclick="App.mineGame.mobileKop()">⛏ Kop</button>' +
-        '<button class="btn btn-secondary mine-action-btn" ontouchstart="App.mineGame.mobileCancel()" onclick="App.mineGame.mobileCancel()">✕ Przerwij</button>' +
-        "</div>" +
-        "</div>" +
-        '<div class="mine-leave-bar">' +
-        '<button class="btn btn-secondary" onclick="App.leaveMine()">⬅ Opuść kopalnię</button>' +
-        "</div>" +
+        '<div class="mine-leave-bar"><button class="btn btn-secondary" onclick="App.leaveMine()">⬅ Opuść kopalnię</button></div>' +
         "</div>"
       );
+    }
+
+    function _updateAutoUI() {
+      var panel = document.getElementById("mine-auto-panel");
+      if (panel) panel.innerHTML = _buildAutoPanel();
     }
 
     function enter() {
@@ -6447,12 +6904,13 @@ const App = (function () {
       if (entered) {
         root.innerHTML = _buildGameHTML();
         _attachCanvas();
+        socket.emit("mine_request_sync");
         return;
       }
       root.innerHTML = _buildLobbyHTML();
     }
 
-    function _doEnter() {
+    function _doEnter(type) {
       var char = App.state.character;
       if (char && char.activity && char.activity.type) {
         var actLabels = {
@@ -6471,14 +6929,20 @@ const App = (function () {
             "." +
             extra +
             " Kontynuować?",
-          _doEnterNow,
+          function () {
+            _doEnterNow(type);
+          },
         );
         return;
       }
-      _doEnterNow();
+      _doEnterNow(type);
     }
 
-    function _doEnterNow() {
+    function _doEnterNow(type) {
+      mineType = type || "main";
+      targetMaterialType = null;
+      autoActive = false;
+      startMiningSent = false;
       var root = _root();
       if (!root) return;
       socket = App.state.socket;
@@ -6486,10 +6950,8 @@ const App = (function () {
       root.innerHTML = _buildGameHTML();
       _attachCanvas();
       entered = true;
-      keys = {};
       App.state.inMine = true;
-
-      socket.emit("mine_enter");
+      socket.emit("mine_enter", { mineType: mineType });
       socket.on("mine_state", _onState);
       socket.on("mine_player_joined", _onPlayerJoined);
       socket.on("mine_player_left", _onPlayerLeft);
@@ -6501,9 +6963,6 @@ const App = (function () {
       socket.on("mine_vein_spawned", _onVeinSpawned);
       socket.on("mine_error", _onMineError);
       socket.on("mine_skill_info", _onSkillInfo);
-      socket.on("mine_chest_spawned", _onChestSpawned);
-      socket.on("mine_chest_claimed", _onChestClaimed);
-      socket.on("mine_chest_loot", _onChestLoot);
     }
 
     function _attachCanvas() {
@@ -6511,16 +6970,11 @@ const App = (function () {
       if (!canvas) return;
       ctx = canvas.getContext("2d");
       lastTickTime = performance.now();
-      _detachInput();
-      document.addEventListener("keydown", _onKeyDown);
-      document.addEventListener("keyup", _onKeyUp);
-      canvas.addEventListener("mousemove", _onMouseMove);
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(_loop);
     }
 
     function pause() {
-      _detachInput();
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = null;
@@ -6530,7 +6984,9 @@ const App = (function () {
     }
 
     function leave() {
-      autoMiningVeinId = null;
+      targetMaterialType = null;
+      autoActive = false;
+      startMiningSent = false;
       pause();
       if (entered && socket) {
         socket.emit("mine_leave");
@@ -6545,92 +7001,10 @@ const App = (function () {
         socket.off("mine_vein_spawned", _onVeinSpawned);
         socket.off("mine_error", _onMineError);
         socket.off("mine_skill_info", _onSkillInfo);
-        socket.off("mine_chest_spawned", _onChestSpawned);
-        socket.off("mine_chest_claimed", _onChestClaimed);
-        socket.off("mine_chest_loot", _onChestLoot);
       }
       entered = false;
       state = null;
-      chest = null;
       App.state.inMine = false;
-    }
-
-    function _detachInput() {
-      document.removeEventListener("keydown", _onKeyDown);
-      document.removeEventListener("keyup", _onKeyUp);
-      if (canvas) {
-        canvas.removeEventListener("mousemove", _onMouseMove);
-      }
-      keys = {};
-    }
-
-    var mouseVirtX = -1,
-      mouseVirtY = -1;
-
-    function _canvasToVirt(clientX, clientY) {
-      if (!canvas) return { x: -1, y: -1 };
-      var rect = canvas.getBoundingClientRect();
-      return {
-        x: (clientX - rect.left) * (VIRT_W / rect.width),
-        y: (clientY - rect.top) * (VIRT_H / rect.height),
-      };
-    }
-
-    function _onMouseMove(e) {
-      var v = _canvasToVirt(e.clientX, e.clientY);
-      mouseVirtX = v.x;
-      mouseVirtY = v.y;
-    }
-
-    function _onKeyDown(e) {
-      var tag = document.activeElement && document.activeElement.tagName;
-      var isTyping = tag === "INPUT" || tag === "TEXTAREA";
-      keys[e.code] = true;
-      if (isTyping) return;
-      if ((e.code === "KeyE" || e.code === "Space") && state) {
-        e.preventDefault();
-        _tryInteract();
-      }
-      if ((e.code === "Escape" || e.code === "KeyQ") && state) {
-        e.preventDefault();
-        autoMiningVeinId = null;
-        socket.emit("mine_cancel_mining");
-      }
-    }
-    function _onKeyUp(e) {
-      keys[e.code] = false;
-    }
-
-    function _tryInteract() {
-      var me = _me();
-      if (!me) return;
-      if (
-        chest &&
-        Math.hypot(me.x - chest.x, me.y - chest.y) <= CHEST_INTERACT_R
-      ) {
-        socket.emit("mine_open_chest");
-        return;
-      }
-      if (me.miningVeinId) return;
-      var nearest = _nearestVein(me.x, me.y, 58);
-      if (nearest) {
-        autoMiningVeinId = nearest.id;
-        socket.emit("mine_start_mining", { veinId: nearest.id });
-      }
-    }
-
-    function _nearestVein(x, y, maxDist) {
-      if (!state) return null;
-      var best = null,
-        bestD = maxDist + 1;
-      state.veins.forEach(function (v) {
-        var d = Math.hypot(v.x - x, v.y - y);
-        if (d < bestD) {
-          bestD = d;
-          best = v;
-        }
-      });
-      return best;
     }
 
     function _me() {
@@ -6640,6 +7014,21 @@ const App = (function () {
           return p.socketId === socket.id;
         }) || null
       );
+    }
+
+    function _nearestVeinOfType(x, y, matType) {
+      if (!state) return null;
+      var best = null,
+        bestD = Infinity;
+      state.veins.forEach(function (v) {
+        if (v.materialType !== matType) return;
+        var d = Math.hypot(v.x - x, v.y - y);
+        if (d < bestD) {
+          bestD = d;
+          best = v;
+        }
+      });
+      return best;
     }
 
     function _loop(now) {
@@ -6667,33 +7056,59 @@ const App = (function () {
       });
       var me = _me();
       if (!me || me.miningVeinId) return;
-      var dx = 0,
-        dy = 0;
-      if (keys["KeyW"] || keys["ArrowUp"]) dy -= 1;
-      if (keys["KeyS"] || keys["ArrowDown"]) dy += 1;
-      if (keys["KeyA"] || keys["ArrowLeft"]) dx -= 1;
-      if (keys["KeyD"] || keys["ArrowRight"]) dx += 1;
-      if (dx === 0 && dy === 0) return;
-      var len = Math.hypot(dx, dy);
-      dx /= len;
-      dy /= len;
+      if (!autoActive || !targetMaterialType || startMiningSent) return;
+      var tv = _nearestVeinOfType(me.x, me.y, targetMaterialType);
+      if (!tv) return;
+      var vdx = tv.x - me.x,
+        vdy = tv.y - me.y;
+      var vdist = Math.hypot(vdx, vdy);
+      if (vdist > 52) {
+        _moveToward(me, vdx / vdist, vdy / vdist, dt);
+      } else {
+        socket.emit("mine_start_mining", { veinId: tv.id });
+        startMiningSent = true;
+      }
+    }
+
+    function _moveToward(me, dirX, dirY, dt) {
       me.x = Math.round(
-        Math.max(8, Math.min(VIRT_W - 8, me.x + dx * SPEED * dt)),
+        Math.max(8, Math.min(VIRT_W - 8, me.x + dirX * SPEED * dt)),
       );
       me.y = Math.round(
-        Math.max(8, Math.min(VIRT_H - 8, me.y + dy * SPEED * dt)),
+        Math.max(8, Math.min(VIRT_H - 8, me.y + dirY * SPEED * dt)),
       );
-      var now = performance.now();
-      if (now - lastMoveSent >= 33) {
+      var nowMs = performance.now();
+      if (nowMs - lastMoveSent >= 33) {
         socket.emit("mine_move", { x: me.x, y: me.y });
-        lastMoveSent = now;
+        lastMoveSent = nowMs;
       }
+    }
+
+    function selectMaterial(type) {
+      if (autoActive) return;
+      var types = MINE_MATERIAL_TYPES[mineType] || [];
+      if (types.indexOf(type) === -1) return;
+      targetMaterialType = targetMaterialType === type ? null : type;
+      _updateAutoUI();
+    }
+
+    function startAuto() {
+      if (!targetMaterialType || autoActive) return;
+      autoActive = true;
+      startMiningSent = false;
+      _updateAutoUI();
+    }
+
+    function stopAuto() {
+      autoActive = false;
+      startMiningSent = false;
+      if (socket) socket.emit("mine_cancel_mining");
+      _updateAutoUI();
     }
 
     function _draw() {
       if (!ctx || !state) return;
       ctx.clearRect(0, 0, VIRT_W, VIRT_H);
-
       if (bgImage.complete && bgImage.naturalWidth > 0) {
         ctx.drawImage(bgImage, 0, 0, VIRT_W, VIRT_H);
         ctx.fillStyle = "rgba(0,0,0,0.55)";
@@ -6702,28 +7117,40 @@ const App = (function () {
         ctx.fillStyle = "#0c0a10";
         ctx.fillRect(0, 0, VIRT_W, VIRT_H);
       }
-
       var me = _me();
       var nowTs = Date.now();
-
+      var targetVein =
+        autoActive && targetMaterialType && me
+          ? _nearestVeinOfType(me.x, me.y, targetMaterialType)
+          : null;
       state.veins.forEach(function (v) {
         var matColors =
           VEIN_MATERIAL_COLORS[v.materialType] || VEIN_MATERIAL_COLORS.ore;
         var col = matColors[v.type] || matColors.normal;
         var matLabels = VEIN_LABELS[v.materialType] || VEIN_LABELS.ore;
-        var inRange = me && Math.hypot(me.x - v.x, me.y - v.y) <= 58;
+        var isTarget =
+          targetMaterialType && v.materialType === targetMaterialType;
+        var isNextTarget = targetVein && v.id === targetVein.id;
+        var dim = !!(targetMaterialType && !isTarget);
         ctx.save();
-        ctx.shadowBlur = inRange ? 22 : 8;
+        ctx.globalAlpha = dim ? 0.28 : 1;
+        ctx.shadowBlur = isNextTarget ? 30 : isTarget ? 16 : 8;
         ctx.shadowColor = col;
         ctx.beginPath();
         ctx.arc(v.x, v.y, VEIN_R, 0, Math.PI * 2);
-        ctx.fillStyle = inRange ? col : _dimColor(col, 0.55);
+        ctx.fillStyle = col;
         ctx.fill();
-        ctx.strokeStyle = inRange ? "#aad4ff" : "rgba(100,160,255,0.3)";
-        ctx.lineWidth = inRange ? 2 : 1;
+        ctx.strokeStyle = isNextTarget
+          ? "#ffffff"
+          : isTarget
+            ? "#aad4ff"
+            : "rgba(100,160,255,0.3)";
+        ctx.lineWidth = isNextTarget ? 3 : isTarget ? 2 : 1;
         ctx.stroke();
         ctx.restore();
-        ctx.fillStyle = inRange ? "#ddeeff" : "rgba(180,210,255,0.55)";
+        ctx.save();
+        ctx.globalAlpha = dim ? 0.28 : 1;
+        ctx.fillStyle = isTarget ? "#ddeeff" : "rgba(180,210,255,0.55)";
         ctx.font = "10px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(matLabels[v.type] || v.type, v.x, v.y + VEIN_R + 13);
@@ -6736,16 +7163,15 @@ const App = (function () {
           ctx.fillStyle = col;
           ctx.fillRect(px0 + i * (pipW + pipGap), v.y - VEIN_R - 9, pipW, 5);
         }
+        ctx.restore();
       });
-
-      var me3 = _me();
-      if (me3 && me3.miningVeinId && me3.miningStartTime) {
+      if (me && me.miningVeinId && me.miningStartTime) {
         var mv = state.veins.find(function (vv) {
-          return vv.id === me3.miningVeinId;
+          return vv.id === me.miningVeinId;
         });
         if (mv) {
           var frac = Math.min(
-            (nowTs - me3.miningStartTime) / MINING_DURATION_MS,
+            (nowTs - me.miningStartTime) / MINING_DURATION_MS,
             1,
           );
           ctx.beginPath();
@@ -6761,35 +7187,9 @@ const App = (function () {
           ctx.stroke();
         }
       }
-
-      if (chest) {
-        var me2 = _me();
-        var chestNear =
-          me2 &&
-          Math.hypot(me2.x - chest.x, me2.y - chest.y) <= CHEST_INTERACT_R;
-        ctx.save();
-        ctx.shadowBlur = chestNear ? 30 : 18;
-        ctx.shadowColor = "#ffd700";
-        ctx.fillStyle = "#7a4a10";
-        ctx.fillRect(chest.x - 9, chest.y - 6, 18, 12);
-        ctx.fillStyle = "#9a6020";
-        ctx.fillRect(chest.x - 9, chest.y - 9, 18, 5);
-        ctx.fillStyle = "#ffd700";
-        ctx.fillRect(chest.x - 2, chest.y - 4, 4, 4);
-        ctx.strokeStyle = "#ffd700";
-        ctx.lineWidth = chestNear ? 2 : 1;
-        ctx.strokeRect(chest.x - 9, chest.y - 9, 18, 15);
-        ctx.restore();
-        ctx.fillStyle = "#ffd700";
-        ctx.font = "bold 9px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("📦 Skrzynia", chest.x, chest.y + 16);
-      }
-
       state.players.forEach(function (p) {
         _drawPlayer(p, p.socketId === socket.id);
       });
-
       if (toastMsg && nowTs < toastUntil) {
         var alpha = Math.min(1, (toastUntil - nowTs) / 400);
         var el = document.getElementById("mine-toast");
@@ -6801,10 +7201,8 @@ const App = (function () {
         var toastEl = document.getElementById("mine-toast");
         if (toastEl) toastEl.style.opacity = "0";
       }
-
       var hud = document.getElementById("mine-hud-info");
       if (hud) {
-        var meNow = _me();
         var txt = "Graczy: <strong>" + state.players.length + "</strong>";
         if (skillInfo) {
           txt +=
@@ -6821,10 +7219,6 @@ const App = (function () {
             txt +=
               ' &nbsp; <span style="color:#c8a84b">⛏ Mikstura Kopacza!</span>';
         }
-        if (meNow && meNow.miningVeinId)
-          txt += autoMiningVeinId
-            ? ' &nbsp; ⟳ <strong style="color:#ffd700">Auto-kopanie…</strong>'
-            : ' &nbsp; ⛏ <strong style="color:#ffd700">Kopanie…</strong>';
         hud.innerHTML = txt;
       }
     }
@@ -6847,8 +7241,13 @@ const App = (function () {
       ctx.arc(x, y - 14, 6, Math.PI, 0);
       ctx.fill();
       ctx.restore();
-      ctx.font = isMe ? "bold 10px sans-serif" : "10px sans-serif";
       ctx.textAlign = "center";
+      if (p.title) {
+        ctx.font = "9px sans-serif";
+        ctx.fillStyle = isMe ? "#c8a84b" : "rgba(200,168,75,0.7)";
+        ctx.fillText("(" + p.title + ")", x, y - 32);
+      }
+      ctx.font = isMe ? "bold 10px sans-serif" : "10px sans-serif";
       ctx.fillStyle = isMe ? "#ffd700" : "rgba(255,255,255,0.75)";
       ctx.fillText(p.charName || "?", x, y - 22);
       if (p.miningVeinId) {
@@ -6882,9 +7281,9 @@ const App = (function () {
         mapWidth: data.mapWidth,
         mapHeight: data.mapHeight,
       };
-      chest = data.chest || null;
       VIRT_W = data.mapWidth || 800;
       VIRT_H = data.mapHeight || 500;
+      _updateAutoUI();
     }
     function _onPlayerJoined(data) {
       if (!state) return;
@@ -6927,6 +7326,10 @@ const App = (function () {
         p.miningVeinId = data.veinId;
         p.miningStartTime = Date.now();
       }
+      if (socket && data.socketId === socket.id) {
+        startMiningSent = false;
+        _updateAutoUI();
+      }
     }
     function _onMiningCancelled(data) {
       if (!state) return;
@@ -6937,7 +7340,10 @@ const App = (function () {
         p.miningVeinId = null;
         p.miningStartTime = null;
       }
-      if (socket && data.socketId === socket.id) autoMiningVeinId = null;
+      if (socket && data.socketId === socket.id) {
+        startMiningSent = false;
+        _updateAutoUI();
+      }
     }
     function _onResult(data) {
       var me = _me();
@@ -6945,6 +7351,7 @@ const App = (function () {
         me.miningVeinId = null;
         me.miningStartTime = null;
       }
+      startMiningSent = false;
       if (data.success) {
         if (data.inventory && App.state.character) {
           App.state.character.inventory = data.inventory;
@@ -6958,24 +7365,19 @@ const App = (function () {
           gold: "złota",
           sulphur: "siarki",
           coal: "węgla",
+          iron: "żelaza",
+          black_ore: "czarnej rudy",
         };
-        var matLabel = MAT_NAMES[data.materialType] || "rudy";
-        _toast("✓ Wydobyto bryłkę " + matLabel + "! +1 EXP");
+        _toast(
+          "✓ Wydobyto bryłkę " +
+            (MAT_NAMES[data.materialType] || "rudy") +
+            "! +1 EXP",
+        );
       } else if (!data.depleted && !data.veinGone) {
         _toast("✗ Nic nie znaleziono.");
       }
-      if (data.depleted || data.veinGone) {
-        autoMiningVeinId = null;
-        if (data.depleted) _toast("⛏ Żyła wyczerpana!");
-        return;
-      }
-      if (
-        autoMiningVeinId &&
-        String(autoMiningVeinId) === String(data.veinId) &&
-        socket
-      ) {
-        socket.emit("mine_start_mining", { veinId: autoMiningVeinId });
-      }
+      if (data.depleted) _toast("⛏ Żyła wyczerpana!");
+      _updateAutoUI();
     }
     function _onVeinUpdate(data) {
       if (!state) return;
@@ -6992,21 +7394,34 @@ const App = (function () {
     }
     function _onVeinSpawned(data) {
       if (state) state.veins.push(data.vein);
+      _updateAutoUI();
+    }
+    function _onPlayerTitleChanged(data) {
+      if (!state) return;
+      var p = state.players.find(function (p) {
+        return p.socketId === data.socketId;
+      });
+      if (p) p.title = data.title;
     }
     function _onMineError(data) {
+      startMiningSent = false;
       _toast("⚠ " + (data.error || "Błąd"));
     }
     function _onSkillInfo(data) {
       skillInfo = data;
       var char = App.state.character;
       if (char) {
+        var prevMiningLevel = char.miningLevel || 1;
         char.miningLevel = data.miningLevel;
         char.miningXp = data.miningXp;
+        if (data.miningLevel > prevMiningLevel) {
+          App.state.titlesData = null;
+          if (App.state.socket) App.state.socket.emit("titles_get");
+        }
         if (App.state.currentSection === "bag") App.renderBag();
       }
       var hud = document.getElementById("mine-hud-info");
       if (hud && state) {
-        var me = _me();
         var txt = "Graczy: <strong>" + state.players.length + "</strong>";
         txt +=
           " &nbsp;|&nbsp; Wydobywanie: <strong>Poz. " +
@@ -7021,51 +7436,35 @@ const App = (function () {
         if (data.potionActive)
           txt +=
             ' &nbsp; <span style="color:#c8a84b">⛏ Mikstura Kopacza!</span>';
-        if (me && me.miningVeinId)
-          txt += ' &nbsp; ⛏ <strong style="color:#ffd700">Kopanie…</strong>';
         hud.innerHTML = txt;
       }
     }
-
-    function _onChestSpawned(data) {
-      chest = data.chest;
-      _toast("📦 W kopalni pojawiła się skrzynia!");
-    }
-    function _onChestClaimed(data) {
-      if (chest && chest.id === data.chestId) chest = null;
-      var oreNames = {
-        brylka_rudy: "bryłek rudy",
-        brylka_zlota: "bryłek złota",
-        brylka_siarki: "bryłek siarki",
-        brylka_wegla: "bryłek węgla",
-      };
-      _toast(
-        data.claimedBy +
-          " otworzył skrzynię! (" +
-          data.qty +
-          "x " +
-          (oreNames[data.itemId] || data.itemId) +
-          ")",
+    function refreshSkillInfo() {
+      var char = App.state.character;
+      if (!char || !state) return;
+      var mLevel = char.miningLevel || 1;
+      var mXp = char.miningXp || 0;
+      var potionActive = !!(
+        char.activeEffects &&
+        char.activeEffects.minerPotion &&
+        char.activeEffects.minerPotion.expiresAt > Date.now()
       );
-    }
-    function _onChestLoot(data) {
-      if (data.inventory && App.state.character) {
-        App.state.character.inventory = data.inventory;
-        if (App.state.currentSection === "bag") App.renderBag();
-      }
-      var oreNames = {
-        brylka_rudy: "bryłek rudy",
-        brylka_zlota: "bryłek złota",
-        brylka_siarki: "bryłek siarki",
-        brylka_wegla: "bryłek węgla",
-      };
-      _toast(
-        "📦 Zdobyłeś " +
-          data.qty +
-          "x " +
-          (oreNames[data.itemId] || data.itemId) +
-          "!",
-      );
+      var XP_TABLE = [0, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14];
+      var xpNeeded =
+        mLevel >= 1 && mLevel <= 10
+          ? XP_TABLE[mLevel]
+          : Math.floor(14 * Math.pow(1.18, mLevel - 10));
+      var chance =
+        Math.round(
+          (0.1 + (mLevel - 1) * 0.005 + (potionActive ? 0.1 : 0)) * 1000,
+        ) / 10;
+      _onSkillInfo({
+        miningLevel: mLevel,
+        miningXp: mXp,
+        miningXpNeeded: xpNeeded,
+        chance: chance,
+        potionActive: potionActive,
+      });
     }
 
     function _toast(msg) {
@@ -7078,7 +7477,7 @@ const App = (function () {
       socket.off("mine_state", _onState);
       socket.off("mine_player_joined", _onPlayerJoined);
       socket.off("mine_player_left", _onPlayerLeft);
-      socket.off("mine_player_moved", _onPlayerMoved);
+      socket.off("mine_players_moved", _onPlayersMoved);
       socket.off("mine_mining_started", _onMiningStarted);
       socket.off("mine_mining_cancelled", _onMiningCancelled);
       socket.off("mine_result", _onResult);
@@ -7086,34 +7485,16 @@ const App = (function () {
       socket.off("mine_vein_spawned", _onVeinSpawned);
       socket.off("mine_error", _onMineError);
       socket.off("mine_skill_info", _onSkillInfo);
-      socket.off("mine_chest_spawned", _onChestSpawned);
-      socket.off("mine_chest_claimed", _onChestClaimed);
-      socket.off("mine_chest_loot", _onChestLoot);
       entered = false;
       state = null;
-      chest = null;
-      autoMiningVeinId = null;
+      startMiningSent = false;
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
       canvas = null;
       ctx = null;
-      _doEnterNow();
-    }
-
-    function keyDown(code) {
-      keys[code] = true;
-    }
-    function keyUp(code) {
-      keys[code] = false;
-    }
-    function mobileKop() {
-      if (state) _tryInteract();
-    }
-    function mobileCancel() {
-      autoMiningVeinId = null;
-      if (socket) socket.emit("mine_cancel_mining");
+      _doEnterNow(mineType);
     }
 
     return {
@@ -7122,10 +7503,11 @@ const App = (function () {
       leave: leave,
       rejoin: rejoin,
       _doEnter: _doEnter,
-      keyDown: keyDown,
-      keyUp: keyUp,
-      mobileKop: mobileKop,
-      mobileCancel: mobileCancel,
+      selectMaterial: selectMaterial,
+      startAuto: startAuto,
+      stopAuto: stopAuto,
+      refreshSkillInfo: refreshSkillInfo,
+      _onPlayerTitleChanged: _onPlayerTitleChanged,
     };
   })();
   App.music = (function () {
@@ -7559,7 +7941,136 @@ const App = (function () {
       html += "</div>";
     }
     html += "</div>";
+
+    const learnedCount = Object.keys(skills).filter(function (k) {
+      return skills[k];
+    }).length;
+    if (learnedCount > 0) {
+      const resetCount = char.skillResetCount || 0;
+      const costLabel =
+        resetCount === 0 ? "Darmowy (1. reset)" : "15 000 złota";
+      html +=
+        '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center">';
+      html +=
+        '<button class="btn btn-danger btn-sm" onclick="App.openSkillResetModal()">⚠ Zresetuj umiejętności (' +
+        costLabel +
+        ")</button>";
+      html += "</div>";
+    }
+
     container.innerHTML = html;
+  };
+
+  App.openSkillResetModal = function () {
+    const char = App.state.character;
+    if (!char) return;
+    const skills = char.skills || {};
+    const resetCount = char.skillResetCount || 0;
+    const isFree = resetCount === 0;
+    const learnedIds = Object.keys(skills).filter(function (k) {
+      return skills[k] && App.SKILLS_DEF[k];
+    });
+    const totalLp = learnedIds.reduce(function (sum, id) {
+      return sum + (App.SKILLS_DEF[id].lpCost || 0);
+    }, 0);
+
+    let listHtml =
+      '<ul style="margin:10px 0 14px;padding-left:18px;color:var(--text2);font-size:0.88rem">';
+    learnedIds.forEach(function (id) {
+      const sk = App.SKILLS_DEF[id];
+      listHtml +=
+        "<li>" +
+        esc(sk.name) +
+        ' <span style="color:var(--text3)">(' +
+        sk.lpCost +
+        " PN)</span></li>";
+    });
+    listHtml += "</ul>";
+
+    let costHtml;
+    if (isFree) {
+      costHtml =
+        '<div style="color:#81c784;font-size:0.88rem;margin-bottom:6px">✓ Pierwszy reset jest <strong>darmowy</strong>.</div>';
+    } else {
+      const gold = char.gold || 0;
+      const enough = gold >= 15000;
+      costHtml =
+        '<div style="color:' +
+        (enough ? "var(--text2)" : "#e57373") +
+        ';font-size:0.88rem;margin-bottom:6px">' +
+        "Koszt: <strong>15 000 złota</strong> (masz: " +
+        gold +
+        " zł)" +
+        (enough ? "" : " — <strong>za mało złota!</strong>") +
+        "</div>";
+    }
+
+    const body = document.getElementById("skill-reset-modal-body");
+    if (body) {
+      body.innerHTML =
+        '<p style="color:var(--text2);font-size:0.9rem;margin-bottom:8px">Zostaną usunięte następujące umiejętności:</p>' +
+        listHtml +
+        '<div style="color:var(--gold2);font-size:0.9rem;margin-bottom:10px">Zwrot: <strong>' +
+        totalLp +
+        " Punktów Nauki</strong></div>" +
+        costHtml +
+        '<p style="color:#e57373;font-size:0.82rem">Uwaga: złoto wydane na naukę umiejętności <strong>nie jest zwracane</strong>.</p>';
+    }
+
+    const modal = document.getElementById("skill-reset-modal");
+    const okBtn = document.getElementById("skill-reset-ok");
+    const cancelBtn = document.getElementById("skill-reset-cancel");
+    if (!modal || !okBtn || !cancelBtn) return;
+
+    const canReset = isFree || (char.gold || 0) >= 15000;
+    okBtn.disabled = !canReset;
+
+    modal.classList.remove("hidden");
+
+    const doOk = function () {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", doOk);
+      cancelBtn.removeEventListener("click", doCancel);
+      App.resetSkills();
+    };
+    const doCancel = function () {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", doOk);
+      cancelBtn.removeEventListener("click", doCancel);
+    };
+    okBtn.addEventListener("click", doOk);
+    cancelBtn.addEventListener("click", doCancel);
+  };
+
+  App.resetSkills = async function () {
+    try {
+      const r = await fetch("/api/game/skills/reset", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("mg_token"),
+        },
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      App.state.character = data.character;
+      App.fixServerTimestamps(App.state.character);
+      App.updateCharacterUI(App.state.character);
+      App.renderSkills();
+      if (App.state.currentSection === "farm") App.renderFarm();
+      App.showNotification(
+        "Umiejętności zresetowane. Zwrócono " +
+          data.returnedLp +
+          " Punktów Nauki.",
+        "levelup",
+      );
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
+    } catch (e) {
+      App.showNotification("Błąd połączenia z serwerem.", "error");
+    }
   };
 
   App.renderThievesGuild = async function () {
@@ -7987,7 +8498,11 @@ const App = (function () {
         }
         return;
       }
-      if (data.character) App.state.character = data.character;
+      if (data.character) {
+        App.state.character = data.character;
+        App.fixServerTimestamps(App.state.character);
+        App.updateCharacterUI(App.state.character);
+      }
       App.renderThievesGuild();
       if (data.success) {
         var cups = data.cups || 0;
@@ -8119,6 +8634,8 @@ const App = (function () {
         "Nauczyłeś się: " + App.SKILLS_DEF[skillId].name + "!",
         "levelup",
       );
+      App.state.titlesData = null;
+      if (App.state.socket) App.state.socket.emit("titles_get");
     } catch (e) {
       App.showNotification("Błąd połączenia z serwerem.", "error");
     }

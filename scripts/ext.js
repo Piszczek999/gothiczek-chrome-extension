@@ -6,5 +6,8 @@ let token = null;
 Ext.init = function () {
   socket = App.state.socket;
   token = localStorage.getItem("mg_token");
-  Ext.initMineQuest();
+  replaceAppMineGame();
+  Ext.mineQuest.init();
+  Ext.mineGame.init();
+  Ext.hunt.init();
 };
