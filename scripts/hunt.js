@@ -1,6 +1,4 @@
 Ext.hunt = {
-  turboActive: false,
-
   init() {
     hookFunction(App, "renderMonsters", Ext.hunt.onHuntSection);
   },
@@ -8,40 +6,20 @@ Ext.hunt = {
   onHuntSection() {
     Ext.hunt.addExpPerHourToMonsters();
     Ext.hunt.addGoldPerHourToMonsters();
-    Ext.hunt.addSkipWaitingButton();
   },
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
   addExpPerHourToMonsters() {
-    Ext.hunt._addStatToMonsters(
+    Ext.hunt.renderStatToMonsters(
       (i) => `Exp na godzinę: ${Ext.hunt.getExpPerHour(i).toFixed(2)}`,
     );
   },
 
   addGoldPerHourToMonsters() {
-    Ext.hunt._addStatToMonsters(
+    Ext.hunt.renderStatToMonsters(
       (i) => `Złoto na godzinę: ${Ext.hunt.getGoldPerHour(i).toFixed(2)}`,
     );
-  },
-
-  _addStatToMonsters(labelFn) {
-    const monsters = document.getElementById("monsters-grid");
-    if (!monsters) return;
-
-    [...monsters.children].forEach((element, i) => {
-      const monStats = element.querySelector(".mon-stats");
-      if (!monStats) return;
-
-      const stat = document.createElement("span");
-      stat.className = "mon-stat";
-
-      const inner = document.createElement("span");
-      inner.textContent = labelFn(i);
-
-      stat.appendChild(inner);
-      monStats.appendChild(stat);
-    });
   },
 
   // ─── Calculations ────────────────────────────────────────────────────────────
@@ -77,39 +55,25 @@ Ext.hunt = {
     return (3600 / huntTime) * Ext.hunt.getAvgGoldPerKill(monsterId);
   },
 
-  switchTurboMode() {
-    if (Ext.hunt.turboActive) socket.on("tick_update", Ext.hunt.startHunt);
-    else socket.off("tick_update", Ext.hunt.startHunt);
-  },
-
-  startHunt(data) {
-    if (data.expGained && !App.state.huntSwitchTimer) {
-      App.startHunt(App.state.character.activity.monsterId);
-    }
-  },
-
   // ─── UI ──────────────────────────────────────────────────────────────────────
 
-  addSkipWaitingButton() {
-    const title = document.querySelector("#section-hunt > div.section-title");
-    if (!title || document.getElementById("hunt-skip-btn")) return;
+  renderStatToMonsters(labelFn) {
+    const monsters = document.getElementById("monsters-grid");
+    if (!monsters) return;
 
-    const button = document.createElement("button");
-    button.id = "hunt-skip-btn";
-    button.className = "btn btn-secondary";
-    button.style.width = "auto";
-    button.textContent = "Pomiń oczekiwanie";
+    [...monsters.children].forEach((element, i) => {
+      const monStats = element.querySelector(".mon-stats");
+      if (!monStats) return;
 
-    button.addEventListener("click", () => {
-      Ext.hunt.turboActive = !Ext.hunt.turboActive;
-      button.textContent = Ext.hunt.turboActive
-        ? "Tryb turbo włączony"
-        : "Tryb turbo wyłączony";
-      button.classList.toggle("btn-secondary", !Ext.hunt.turboActive);
-      button.classList.toggle("btn-primary", Ext.hunt.turboActive);
-      Ext.hunt.switchTurboMode();
+      const stat = document.createElement("span");
+      stat.className = "mon-stat";
+
+      const inner = document.createElement("span");
+      inner.textContent = labelFn(i);
+      inner.style.color = "#9dff00";
+
+      stat.appendChild(inner);
+      monStats.appendChild(stat);
     });
-
-    title.appendChild(button);
   },
 };

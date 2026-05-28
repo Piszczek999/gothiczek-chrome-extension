@@ -44,6 +44,7 @@ const App = (function () {
     cachedGuardQuest: null,
     huntSwitchAllowedAt: null,
     huntSwitchTimer: null,
+    huntSwitchCountdownInterval: null,
     inMine: false,
     craftingRecipes: [],
     craftTab: "materials",
@@ -1059,14 +1060,23 @@ const App = (function () {
       App.fixServerTimestamps(char);
     }
     if (data.lastHuntStartTime) {
-      const allowedAt = data.lastHuntStartTime + 10000;
+      const allowedAt = data.lastHuntStartTime + 20000;
       App.state.huntSwitchAllowedAt = allowedAt;
       if (allowedAt > Date.now()) {
         if (App.state.huntSwitchTimer) clearTimeout(App.state.huntSwitchTimer);
         App.state.huntSwitchTimer = setTimeout(function () {
           App.state.huntSwitchTimer = null;
+          if (App.state.huntSwitchCountdownInterval) {
+            clearInterval(App.state.huntSwitchCountdownInterval);
+            App.state.huntSwitchCountdownInterval = null;
+          }
           if (App.state.currentSection === "hunt") App.renderMonsters();
         }, allowedAt - Date.now());
+        if (App.state.huntSwitchCountdownInterval)
+          clearInterval(App.state.huntSwitchCountdownInterval);
+        App.state.huntSwitchCountdownInterval = setInterval(function () {
+          if (App.state.currentSection === "hunt") App.renderMonsters();
+        }, 1000);
       }
     }
     if (data.activeEffects !== undefined)
@@ -1663,9 +1673,9 @@ const App = (function () {
           '<div class="mon-lock">Obr. ' + (m.defenseReq || 0) + "</div>";
       else if (cooldownLocked)
         lockBadge =
-          '<div class="mon-lock hunt-cooldown-badge">' +
+          '<div class="mon-lock hunt-cooldown-badge">Do zmiany zostało: ' +
           Math.ceil(switchCooldownMs / 1000) +
-          "s</div>";
+          "</div>";
       let dropRangeBadge = "";
       if (m.drops && m.drops.length > 0) {
         const chances = m.drops.map((d) => Math.round(d.chance * 100));
@@ -1783,12 +1793,21 @@ const App = (function () {
       }
       if (data.activity && App.state.character)
         App.state.character.activity = data.activity;
-      App.state.huntSwitchAllowedAt = Date.now() + 10000;
+      App.state.huntSwitchAllowedAt = Date.now() + 20000;
       if (App.state.huntSwitchTimer) clearTimeout(App.state.huntSwitchTimer);
       App.state.huntSwitchTimer = setTimeout(function () {
         App.state.huntSwitchTimer = null;
+        if (App.state.huntSwitchCountdownInterval) {
+          clearInterval(App.state.huntSwitchCountdownInterval);
+          App.state.huntSwitchCountdownInterval = null;
+        }
         if (App.state.currentSection === "hunt") App.renderMonsters();
-      }, 10000);
+      }, 20000);
+      if (App.state.huntSwitchCountdownInterval)
+        clearInterval(App.state.huntSwitchCountdownInterval);
+      App.state.huntSwitchCountdownInterval = setInterval(function () {
+        if (App.state.currentSection === "hunt") App.renderMonsters();
+      }, 1000);
       App.updateCharacterUI(App.state.character);
       App.renderMonsters();
       App.renderActivityDisplay();

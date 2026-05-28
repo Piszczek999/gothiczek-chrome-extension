@@ -37,7 +37,6 @@ Ext.mineGame = {
   // ─── Socket event handlers ────────────────────────────────────────────────────
 
   onMineState(data) {
-    console.log("onMineState", data);
     const clockOffset = Date.now() - (data.serverNow || Date.now());
     Ext.mineGame.state = {
       players: (data.players || []).map(function (p) {

@@ -317,7 +317,7 @@ function replaceAppMineGame() {
 
     function pause() {
       if (rafId) {
-        cancelAnimationFrame(rafId);
+        clearTimeout(rafId);
         rafId = null;
       }
       canvas = null;
@@ -376,8 +376,7 @@ function replaceAppMineGame() {
       rafId = setTimeout(() => _loop(performance.now()), 1000 / 60); // changed
       if (!canvas || !ctx) return;
       var elapsed = now - lastTickTime;
-      if (elapsed < 15) return;
-      var dt = Math.min(elapsed / 1000, 0.1);
+      var dt = Math.min(elapsed / 1000, 0.3);
       lastTickTime = now;
       _tick(dt);
       _draw();
@@ -386,7 +385,7 @@ function replaceAppMineGame() {
     function _tick(dt) {
       if (!state || !socket) return;
       state.players.forEach(function (p) {
-        if (p.socketId === socket.id || p.miningVeinId) return;
+        if (p.socketId === socket.id) return;
         if (p.targetX === undefined) {
           p.targetX = p.x;
           p.targetY = p.y;
@@ -404,22 +403,37 @@ function replaceAppMineGame() {
         vdy = tv.y - me.y;
       var vdist = Math.hypot(vdx, vdy);
       if (vdist > 52) {
-        _moveToward(me, vdx / vdist, vdy / vdist, dt);
+        _moveToward(me, tv.x, tv.y, dt);
       } else {
         socket.emit("mine_start_mining", { veinId: tv.id });
         startMiningSent = true;
       }
     }
 
-    function _moveToward(me, dirX, dirY, dt) {
-      me.x = Math.round(
-        Math.max(8, Math.min(VIRT_W - 8, me.x + dirX * SPEED * dt)),
-      );
-      me.y = Math.round(
-        Math.max(8, Math.min(VIRT_H - 8, me.y + dirY * SPEED * dt)),
-      );
+    function _moveToward(me, targetX, targetY, dt) {
+      var vdx = targetX - me.x;
+      var vdy = targetY - me.y;
+      var vdist = Math.hypot(vdx, vdy);
+      var dirX = vdx / vdist;
+      var dirY = vdy / vdist;
+      var stepDist = SPEED * dt;
+      console.log("vdist:", vdist);
+      console.log("stepDist:", stepDist);
+      console.log("dt:", dt);
+      if (stepDist >= vdist) {
+        me.x = targetX;
+        me.y = targetY;
+      } else {
+        me.x = Math.round(
+          Math.max(8, Math.min(VIRT_W - 8, me.x + dirX * SPEED * dt)),
+        );
+        me.y = Math.round(
+          Math.max(8, Math.min(VIRT_H - 8, me.y + dirY * SPEED * dt)),
+        );
+      }
       var nowMs = performance.now();
       if (nowMs - lastMoveSent >= 33) {
+        console.log("emit movement");
         socket.emit("mine_move", { x: me.x, y: me.y });
         lastMoveSent = nowMs;
       }

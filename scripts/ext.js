@@ -10,4 +10,6 @@ Ext.init = function () {
   Ext.mineQuest.init();
   Ext.mineGame.init();
   Ext.hunt.init();
+  Ext.bag.init();
+  Ext.gold.init();
 };

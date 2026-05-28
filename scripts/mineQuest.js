@@ -3,6 +3,9 @@ Ext.mineQuest = {
     hookFunction(App.mineGame, "_doEnter", Ext.mineQuest.connect, {
       patchFlag: "__mineQuest",
     });
+    hookFunction(App.mineGame, "enter", Ext.mineQuest.renderMineQuest, {
+      patchFlag: "__mineQuest",
+    });
     hookFunction(App.mineGame, "leave", Ext.mineQuest.disconnect, {
       patchFlag: "__mineQuest",
     });
