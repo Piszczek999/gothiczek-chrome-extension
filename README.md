@@ -19,13 +19,11 @@ Jeśli wtyczka przestanie działać prawidłowo, należy:
 
 # Co dodaje to rozszerzenie
 
-- Autokopanie (nie zbiera skrzynek bo Pagan nie zezwolił)
+- Tryb turbo w polowaniu (omija czas oczekiwania na potwora raz na 10 sekund)
 - Podgląd misji kopania bezpośrednio na stronie gdzie się kopie (z możliwością odbioru nagrody za zadanie)
 - Pokazuje dodatkową statystykę w zakładnie `Polowanie`. Przy każdym potworze widnieją dwie nowe statystyki:
   - Exp/godzinę (biorąc pod uwagę aktualny damage postaci)
   - Średnią zł/godzinę za łupy z potwora
-- Możliwość sprzedaży wszystkich przedmiotów o danej nazwie (nowy przycisk w `Plecaku` w ekwipunku)
-- Złoto, które widnieje na górze ekranu pokazuje również ile możemy mieć złota po sprzedaniu materiałów z polowania (fajne odkąd lepiej nie sprzedawać od razu, żeby złodzieje nas nie okradli)
 
 # Kontakt
 
