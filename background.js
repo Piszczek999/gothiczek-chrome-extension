@@ -7,13 +7,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId },
       files: [
+        "scripts/ext.js",
         "scripts/helper.js",
-        "scripts/huntSection.js",
-        "scripts/bagSection.js",
-        "scripts/totalGold.js",
+        // "scripts/huntSection.js",
+        // "scripts/bagSection.js",
+        // "scripts/totalGold.js",
         // "scripts/mineGame.js",
         "scripts/mineQuest.js",
-        "scripts/injected.js",
+        "scripts/hooks.js",
       ],
       world: "MAIN",
     });

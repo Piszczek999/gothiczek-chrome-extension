@@ -1,14 +1,19 @@
-function connectSocketHandlers() {
-  if (!App?.state?.socket) {
-    setTimeout(connectSocketHandlers, 100);
-    return;
-  }
-  const { socket } = App.state;
-  socket.on("mine_result", () => updateMineQuest());
-}
-connectSocketHandlers();
+Ext.initMineQuest = function () {
+  hookFunction(App.mineGame, "_doEnter", Ext.connect);
+  hookFunction(App.mineGame, "leave", Ext.disconnect);
+};
 
-function renderMineQuestContainer() {
+Ext.connect = function () {
+  Ext.renderMineQuest();
+
+  socket.on("mine_result", () => Ext.updateMineQuest());
+};
+
+Ext.disconnect = function () {
+  socket.off("mine_result");
+};
+
+Ext.renderMineQuest = function () {
   if (!App.state.inMine) return;
 
   const controls = document.querySelector("#mine-game-root > div");
@@ -29,28 +34,25 @@ function renderMineQuestContainer() {
     controls.insertBefore(questPanel, controls.children[index]);
   }
 
-  updateMineQuest();
-}
+  Ext.updateMineQuest();
+};
 
-async function updateMineQuest() {
+Ext.updateMineQuest = async function () {
   const questPanel = document.getElementById("mine-quest-container");
-
-  const token = localStorage.getItem("mg_token");
   try {
     const mqRes = await fetch("/api/game/mine-quest", {
       headers: { Authorization: "Bearer " + token },
     });
 
     const mqData = mqRes.ok ? await mqRes.json() : null;
-    questPanel.innerHTML = buildMineQuestHtml(mqData);
+    questPanel.innerHTML = Ext.buildMineQuestHtml(mqData);
   } catch (e) {
+    console.trace();
     App.showNotification("Błąd połączenia", "error");
-    setTimeout(updateMineQuest, 1000);
   }
-}
+};
 
-async function claimMineQuest() {
-  const token = localStorage.getItem("mg_token");
+Ext.claimMineQuest = async function () {
   try {
     const res = await fetch("/api/game/mine-quest/claim", {
       method: "POST",
@@ -58,6 +60,7 @@ async function claimMineQuest() {
     });
     const data = await res.json();
     if (!res.ok) {
+      console.trace();
       App.showNotification(data.error || "Błąd", "error");
       return;
     }
@@ -79,11 +82,12 @@ async function claimMineQuest() {
         "levelup",
       );
   } catch (e) {
+    console.trace();
     App.showNotification("Błąd połączenia", "error");
   }
-}
+};
 
-function buildMineQuestHtml(data) {
+Ext.buildMineQuestHtml = function (data) {
   if (!data) return "";
   const q = data.quest;
   const char = App.state.character;
@@ -131,7 +135,7 @@ function buildMineQuestHtml(data) {
       dynGold +
       " złota</span></div>" +
       (complete
-        ? '<button class="btn btn-primary" style="max-width:200px;margin-top:12px" onclick="claimMineQuest()">Odbierz nagrodę</button>'
+        ? '<button class="btn btn-primary" style="max-width:200px;margin-top:12px" onclick="Ext.claimMineQuest()">Odbierz nagrodę</button>'
         : "") +
       '<div style="margin-top:8px;color:var(--text3);font-size:0.78rem">Ukończone: ' +
       data.completedCount +
@@ -151,4 +155,4 @@ function buildMineQuestHtml(data) {
     inner +
     "</div>"
   );
-}
+};
