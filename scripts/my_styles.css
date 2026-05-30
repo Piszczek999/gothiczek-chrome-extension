@@ -50,3 +50,33 @@
 .vein-name {
   color: #c8b896;
 }
+.cd-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* push text to the right */
+  pointer-events: none;
+  /* gap: 2px; */
+}
+
+.cd-text {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px 3px 0 0;
+  /* color set dynamically via JS */
+}
+
+.cd-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.cd-bar-fill {
+  height: 100%;
+}

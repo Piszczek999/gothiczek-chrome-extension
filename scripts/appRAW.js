@@ -50,6 +50,12 @@ const App = (function () {
     craftTab: "materials",
     ticketUnread: false,
     respawnCountdownInterval: null,
+    campTab: "members",
+    campData: null,
+    myCampId: null,
+    monstrumData: null,
+    _monstrumTimer: null,
+    campMonsterBlink: false,
   };
 
   App.POTION_RECIPES = {
@@ -117,6 +123,8 @@ const App = (function () {
     "brylka_zlota",
     "brylka_siarki",
     "brylka_wegla",
+    "brylka_zelaza",
+    "brylka_czarnej_rudy",
     "skora_owcy",
     "skora_wilka",
     "skora_kretoszczura",
@@ -209,6 +217,27 @@ const App = (function () {
         body: JSON.stringify({ key: "gif_monsters", value: !!enabled }),
       }).catch(function () {});
     }
+  };
+
+  App.getChatLines = function () {
+    var v = parseInt(localStorage.getItem("mg_chat_lines"), 10);
+    return !isNaN(v) && v >= 5 && v <= 30 ? v : 9;
+  };
+
+  App.applyChatLines = function () {
+    var chatEl = document.getElementById("tavern-chat-messages");
+    if (!chatEl) return;
+    var px = App.getChatLines() * 20 + "px";
+    chatEl.style.height = px;
+    chatEl.style.maxHeight = px;
+  };
+
+  App.setChatLines = function (n) {
+    n = Math.max(5, Math.min(30, parseInt(n, 10) || 9));
+    localStorage.setItem("mg_chat_lines", String(n));
+    App.applyChatLines();
+    var lbl = document.getElementById("chat-lines-label");
+    if (lbl) lbl.textContent = n + " linii";
   };
 
   App.getMonsterImg = function (monsterId, forActivity) {
@@ -556,6 +585,8 @@ const App = (function () {
   App.enterGame = function () {
     App.showScreen("game-screen");
     App.loadCraftingRecipes();
+    App._prefetchCampState();
+
     var _char = App.state.character;
     if (
       _char &&
@@ -764,15 +795,59 @@ const App = (function () {
           return;
         }
         App.state.socket.emit("tavern_get_state");
-        if (App.state.inMine && App.state.currentSection === "mine") {
+        if (App.state.inMine) {
           App.mineGame.rejoin();
         }
+        App._checkMonstrumBlink();
       });
       App.state.socket.on("admin_banner", function (data) {
         App.renderAdminBanner(data);
       });
       App.state.socket.on("force_reload", function () {
         location.reload();
+      });
+      App.state.socket.on("camp_update", function () {
+        if (App.state.currentSection === "camp") {
+          App.renderCamp();
+        } else {
+          App._prefetchCampState();
+        }
+      });
+      App.state.socket.on("monstrum_update", function (data) {
+        App.state.monstrumData = data;
+        var myCampId = App.state.myCampId;
+        if (
+          myCampId &&
+          data[myCampId] &&
+          data[myCampId].state === "joining" &&
+          App.state.currentSection !== "camp"
+        ) {
+          App.state.campMonsterBlink = true;
+          var btn = document.getElementById("nav-camp");
+          if (btn) btn.classList.add("ticket-unread");
+        }
+        if (
+          App.state.currentSection === "camp" &&
+          App.state.campTab === "monstrum"
+        ) {
+          App._refreshMonstrumTab();
+        }
+      });
+      App.state.socket.on("monstrum_monster_appeared", function (data) {
+        if (App.state.myCampId && App.state.myCampId === data.campId) {
+          App.state.campMonsterBlink = true;
+          var btn = document.getElementById("nav-camp");
+          if (btn) btn.classList.add("ticket-unread");
+        }
+      });
+      App.state.socket.on("monstrum_reward", function (data) {
+        if (data.newGold !== undefined && App.state.character) {
+          App.state.character.gold = data.newGold;
+          App.state.character.exp = data.newExp;
+          App.state.character.campReputation = data.newCampReputation;
+          App.updateCharacterUI(App.state.character);
+        }
+        App._showMonstrumRewardPopup(data);
       });
       App.state.socket.on("tavern_state", App.onTavernState);
       App.state.socket.on("tavern_message", App.onTavernMessage);
@@ -1255,6 +1330,7 @@ const App = (function () {
       "tickets",
       "skills",
       "thieves",
+      "camp",
     ].forEach((s) => {
       const sec = document.getElementById("section-" + s);
       if (sec) sec.classList.toggle("hidden", s !== name);
@@ -1287,6 +1363,16 @@ const App = (function () {
     if (name === "skills") App.renderSkills();
     if (name === "thieves") App.renderThievesGuild();
     if (name === "hazard") App.renderHazard();
+    if (name === "camp") {
+      App.renderCamp();
+      App.state.campMonsterBlink = false;
+      var campBtn = document.getElementById("nav-camp");
+      if (campBtn) campBtn.classList.remove("ticket-unread");
+    }
+    if (name !== "camp" && App.state._monstrumTimer) {
+      clearInterval(App.state._monstrumTimer);
+      App.state._monstrumTimer = null;
+    }
   };
 
   App.leaveMine = function () {
@@ -1414,6 +1500,20 @@ const App = (function () {
         '<div class="guard-sub">Gotowe za: <span class="brewing-remaining">' +
         App.formatDuration(brewRemaining) +
         "</span></div>" +
+        "</div>";
+    } else if (activity.type === "mining") {
+      var mineDispNames = {
+        main: "głównej kopalni Khorinis",
+        shaft: "bocznego szybu kopalni",
+        bottom: "dna kopalni",
+      };
+      var mineDisp = mineDispNames[activity.mineType] || "kopalni Khorinis";
+      div.innerHTML =
+        '<div class="guard-scene char-sprite guarding">' +
+        '<div class="guard-title">⛏ Wydobywasz w ' +
+        mineDisp +
+        "</div>" +
+        '<div class="guard-sub">Wydobycie działa w tle. Możesz zamknąć przeglądarkę.</div>' +
         "</div>";
     } else {
       div.innerHTML =
@@ -3298,6 +3398,28 @@ const App = (function () {
       "</div>" +
       "</div>" +
       (function () {
+        var lines = App.getChatLines();
+        return (
+          '<div class="options-group" style="margin-top:16px">' +
+          '<div class="options-group-title">Opcje chatu</div>' +
+          '<div class="option-row">' +
+          '<div class="option-info">' +
+          '<div class="option-name">Liczba linii czatu</div>' +
+          '<div class="option-desc">Wysokość okna czatu karczmy. Ustawienie jest zapamiętywane na tym urządzeniu.</div>' +
+          "</div>" +
+          '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+          '<input type="range" class="music-vol-slider" style="width:120px" min="5" max="30" value="' +
+          lines +
+          '" oninput="App.setChatLines(this.value)">' +
+          '<span id="chat-lines-label" class="music-vol-pct" style="min-width:44px;text-align:right">' +
+          lines +
+          " linii</span>" +
+          "</div>" +
+          "</div>" +
+          "</div>"
+        );
+      })() +
+      (function () {
         var _sv = localStorage.getItem("mg_music_vol");
         var vol = Math.round(
           (_sv !== null && !isNaN(parseFloat(_sv)) ? parseFloat(_sv) : 0.2) *
@@ -3792,6 +3914,18 @@ const App = (function () {
         label: "👥 Tytuły wybrane przez społeczność",
         ids: ["cwel", "gej", "wrzod", "piecowy"],
       },
+      {
+        label: "🏕 Tytuły obozowe — Obóz na Bagnie",
+        ids: ["swir_z_sekty", "zbud_sie", "wyznawca_sniacego"],
+      },
+      {
+        label: "🏕 Tytuły obozowe — Nowy Obóz",
+        ids: ["zbieracz", "ryzowy_ksiaze", "mag_wody"],
+      },
+      {
+        label: "🏕 Tytuły obozowe — Stary Obóz",
+        ids: ["gosc_spod_bramy", "in_extremo", "gomez"],
+      },
     ];
 
     var REQ_LABELS = {
@@ -3814,6 +3948,15 @@ const App = (function () {
       gej: "Dostępny dla każdego",
       wrzod: "Dostępny dla każdego",
       piecowy: "Dostępny dla każdego",
+      swir_z_sekty: "10 Rep. — Obóz na Bagnie",
+      zbud_sie: "25 Rep. — Obóz na Bagnie",
+      wyznawca_sniacego: "50 Rep. — Obóz na Bagnie",
+      zbieracz: "10 Rep. — Nowy Obóz",
+      ryzowy_ksiaze: "25 Rep. — Nowy Obóz",
+      mag_wody: "50 Rep. — Nowy Obóz",
+      gosc_spod_bramy: "10 Rep. — Stary Obóz",
+      in_extremo: "25 Rep. — Stary Obóz",
+      gomez: "50 Rep. — Stary Obóz",
     };
 
     var cooldownHtml =
@@ -4586,7 +4729,7 @@ const App = (function () {
   App.enterArena = async function () {
     var char = App.state.character;
     if (!char) return;
-    var hasActivity = char.activity && char.activity.type;
+    var hasActivity = (char.activity && char.activity.type) || App.state.inMine;
     var as = char.arenaState;
     if (as && as.active) {
       App.showNotification("Już jesteś na arenie!", "error");
@@ -4599,10 +4742,14 @@ const App = (function () {
         brewing: "Warzenie",
         foraging: "Zbieractwo",
         mine: "Kopalnia",
+        mining: "Wydobycie",
       };
-      var actName = actLabels[char.activity.type] || char.activity.type;
+      var actType =
+        (char.activity && char.activity.type) ||
+        (App.state.inMine ? "mining" : "");
+      var actName = actLabels[actType] || actType;
       var actExtra =
-        char.activity.type === "brewing"
+        actType === "brewing"
           ? " Stracisz wszystkie składniki z kolejki warzenia."
           : "";
       var ok = await App.showConfirmAsync(
@@ -4615,6 +4762,7 @@ const App = (function () {
       );
       if (!ok) return;
     }
+    if (App.state.inMine) App.mineGame.leave();
     var token = localStorage.getItem("mg_token");
     try {
       var res = await fetch("/api/game/arena/enter", {
@@ -5100,6 +5248,24 @@ const App = (function () {
             "Uwarzone podczas nieobecności: " +
             esc(ev.potionName || ev.potionId) +
             "!";
+        } else if (ev.type === "mining") {
+          var _mn = {
+            ore: "rudy",
+            gold: "złota",
+            sulphur: "siarki",
+            coal: "węgla",
+            iron: "żelaza",
+            black_ore: "czarnej rudy",
+          };
+          icon = "⛏";
+          msg =
+            "Wydobyto " +
+            esc(ev.found) +
+            " bryłk" +
+            (ev.found === 1 ? "ę" : "i") +
+            " " +
+            (_mn[ev.materialType] || ev.materialType) +
+            " podczas nieobecności.";
         } else if (ev.type === "arena") {
           icon = "🏟";
           var arenaRes =
@@ -6339,6 +6505,7 @@ const App = (function () {
   App.initTavernChat = function () {
     var chatEl = document.getElementById("tavern-chat-messages");
     if (chatEl) {
+      App.applyChatLines();
       chatEl.addEventListener("scroll", function () {
         App.state.tavernChatAutoScroll =
           chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 20;
@@ -6408,12 +6575,19 @@ const App = (function () {
           );
         }
         var rankColor =
-          m.rankColor || (ranks[m.userId] && ranks[m.userId].color) || null;
+          m.rankColor ||
+          (ranks[m.userId] && ranks[m.userId].color) ||
+          m.campColor ||
+          App._getCampColorForUser(m.userId) ||
+          null;
         var nameStyle = rankColor
           ? ' style="color:' + esc(rankColor) + '"'
           : "";
         var titleHtml = m.title
           ? '<span class="tav-title">(' + esc(m.title) + ")</span> "
+          : "";
+        var cmdStar = App._isCommander(m.userId)
+          ? '<span class="tav-commander-star">⭐</span>'
           : "";
         return (
           '<div class="tav-msg-line">' +
@@ -6421,6 +6595,7 @@ const App = (function () {
           esc(m.time) +
           "]</span> " +
           titleHtml +
+          cmdStar +
           '<span class="tav-name"' +
           nameStyle +
           ">" +
@@ -6517,6 +6692,8 @@ const App = (function () {
         (App.state.tavernRanks &&
           App.state.tavernRanks[m.userId] &&
           App.state.tavernRanks[m.userId].color) ||
+        m.campColor ||
+        App._getCampColorForUser(m.userId) ||
         null;
       var nameStyle = rankColor ? ' style="color:' + esc(rankColor) + '"' : "";
       var titleHtml = m.title
@@ -6931,7 +7108,12 @@ const App = (function () {
 
     function _doEnter(type) {
       var char = App.state.character;
-      if (char && char.activity && char.activity.type) {
+      if (
+        char &&
+        char.activity &&
+        char.activity.type &&
+        char.activity.type !== "mining"
+      ) {
         var actLabels = {
           hunting: "polowanie",
           guard: "wartę",
@@ -6982,6 +7164,8 @@ const App = (function () {
       socket.on("mine_vein_spawned", _onVeinSpawned);
       socket.on("mine_error", _onMineError);
       socket.on("mine_skill_info", _onSkillInfo);
+      socket.on("mine_restore_material", _onRestoreMaterial);
+      socket.on("mine_offline_results", _onOfflineResults);
     }
 
     function _attachCanvas() {
@@ -7020,6 +7204,8 @@ const App = (function () {
         socket.off("mine_vein_spawned", _onVeinSpawned);
         socket.off("mine_error", _onMineError);
         socket.off("mine_skill_info", _onSkillInfo);
+        socket.off("mine_restore_material", _onRestoreMaterial);
+        socket.off("mine_offline_results", _onOfflineResults);
       }
       entered = false;
       state = null;
@@ -7084,6 +7270,7 @@ const App = (function () {
       if (vdist > 52) {
         _moveToward(me, vdx / vdist, vdy / vdist, dt);
       } else {
+        socket.emit("mine_move", { x: me.x, y: me.y });
         socket.emit("mine_start_mining", { veinId: tv.id });
         startMiningSent = true;
       }
@@ -7115,6 +7302,8 @@ const App = (function () {
       if (!targetMaterialType || autoActive) return;
       autoActive = true;
       startMiningSent = false;
+      if (socket)
+        socket.emit("mine_set_material", { materialType: targetMaterialType });
       _updateAutoUI();
     }
 
@@ -7122,6 +7311,7 @@ const App = (function () {
       autoActive = false;
       startMiningSent = false;
       if (socket) socket.emit("mine_cancel_mining");
+      if (socket) socket.emit("mine_set_material", { materialType: null });
       _updateAutoUI();
     }
 
@@ -7286,6 +7476,24 @@ const App = (function () {
         Math.round(parseInt(hex.slice(5, 7), 16) * f) +
         ")"
       );
+    }
+
+    function _onRestoreMaterial(data) {
+      if (!data || !data.materialType) return;
+      var validTypes = MINE_MATERIAL_TYPES[mineType] || [];
+      if (validTypes.indexOf(data.materialType) === -1) return;
+      targetMaterialType = data.materialType;
+      autoActive = true;
+      startMiningSent = false;
+      _updateAutoUI();
+    }
+    function _onOfflineResults(data) {
+      if (data && data.events && data.events.length)
+        App.showOfflineSummary(data.events);
+      if (data && data.inventory && App.state.character) {
+        App.state.character.inventory = data.inventory;
+        if (App.state.currentSection === "bag") App.renderBag();
+      }
     }
 
     function _onState(data) {
@@ -7504,6 +7712,8 @@ const App = (function () {
       socket.off("mine_vein_spawned", _onVeinSpawned);
       socket.off("mine_error", _onMineError);
       socket.off("mine_skill_info", _onSkillInfo);
+      socket.off("mine_restore_material", _onRestoreMaterial);
+      socket.off("mine_offline_results", _onOfflineResults);
       entered = false;
       state = null;
       startMiningSent = false;
@@ -9020,6 +9230,978 @@ const App = (function () {
       locked: false,
     };
     App.renderHazard();
+  };
+
+  App._prefetchCampState = async function () {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/camps/state", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!res.ok) return;
+      var data = await res.json();
+      App.state.campData = data.camps;
+      App.state.myCampId = data.myCampId || null;
+      App.renderTavernMessages();
+      if (App.state.myCampId) App._checkMonstrumBlink();
+    } catch (e) {}
+  };
+
+  App._checkMonstrumBlink = async function () {
+    var myCampId = App.state.myCampId;
+    if (!myCampId) return;
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/monstrum/state", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!res.ok) return;
+      var json = await res.json();
+      App.state.monstrumData = json.state;
+      var cs = json.state && json.state[myCampId];
+      if (cs && cs.state === "joining" && App.state.currentSection !== "camp") {
+        App.state.campMonsterBlink = true;
+        var btn = document.getElementById("nav-camp");
+        if (btn) btn.classList.add("ticket-unread");
+      }
+    } catch (e) {}
+  };
+
+  App._getCampColorForUser = function (userId) {
+    var cd = App.state.campData;
+    if (!cd) return null;
+    for (var id in cd) {
+      var camp = cd[id];
+      if (
+        camp &&
+        camp.members &&
+        camp.members.some(function (m) {
+          return m.userId === userId;
+        })
+      ) {
+        return camp.color || null;
+      }
+    }
+    return null;
+  };
+
+  App._isCommander = function (userId) {
+    var cd = App.state.campData;
+    if (!cd) return false;
+    for (var id in cd) {
+      var camp = cd[id];
+      if (camp && camp.commander && camp.commander.userId === userId)
+        return true;
+    }
+    return false;
+  };
+
+  App.renderCamp = async function () {
+    var container = document.getElementById("camp-container");
+    if (!container) return;
+    var token = localStorage.getItem("mg_token");
+    var char = App.state.character;
+    if (!char) {
+      container.innerHTML =
+        '<div class="panel-box"><div class="panel-box-body" style="color:var(--text3)">Ładowanie...</div></div>';
+      return;
+    }
+    container.innerHTML =
+      '<div class="panel-box"><div class="panel-box-body" style="color:var(--text3)">Ładowanie danych obozów...</div></div>';
+    try {
+      var res = await fetch("/api/camps/state", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!res.ok) {
+        container.innerHTML =
+          '<div class="panel-box"><div class="panel-box-body" style="color:#e05555">Błąd ładowania obozów.</div></div>';
+        return;
+      }
+      var data = await res.json();
+      App.state.campData = data.camps;
+      App.state.myCampId = data.myCampId || null;
+      App._renderCampUI(container, data);
+      App.renderTavernMessages();
+    } catch (e) {
+      container.innerHTML =
+        '<div class="panel-box"><div class="panel-box-body" style="color:#e05555">Błąd połączenia.</div></div>';
+    }
+  };
+
+  App._renderCampUI = function (container, data) {
+    var myCampId = data.myCampId || App.state.myCampId;
+    var camps = data.camps || App.state.campData || {};
+    var char = App.state.character;
+    var html = "";
+    if (!myCampId) {
+      html += '<div class="panel-box"><div class="panel-box-body">';
+      html +=
+        "<div style=\"font-family:'Cinzel',serif;color:var(--gold);font-size:1rem;margin-bottom:10px\">Obozy Khorinis</div>";
+      html +=
+        '<div style="color:var(--text2);font-size:0.87rem;margin-bottom:6px">Wybierz swój obóz. <strong style="color:#e0b84b">Decyzja jest nieodwracalna — nie możesz zmienić obozu.</strong></div>';
+      if ((char.level || 1) < 15) {
+        html +=
+          '<div style="color:#e05555;font-size:0.84rem;margin-bottom:14px">⚠ Wymagany poziom 15. Jesteś na poziomie ' +
+          esc(String(char.level || 1)) +
+          ".</div>";
+      } else {
+        html +=
+          '<div style="color:var(--text3);font-size:0.83rem;margin-bottom:14px">Wymagany poziom: 15</div>';
+      }
+      html +=
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:4px">';
+      var CAMP_IDS = ["swamp", "old", "new"];
+      for (var ci = 0; ci < CAMP_IDS.length; ci++) {
+        var cid = CAMP_IDS[ci];
+        var camp = camps[cid];
+        if (!camp) continue;
+        var borderColor = camp.color || "#888";
+        var canJoin = (char.level || 1) >= 15;
+        html +=
+          '<div style="background:var(--panel2);border:1px solid ' +
+          esc(borderColor) +
+          ";border-left:4px solid " +
+          esc(borderColor) +
+          ';border-radius:4px;padding:16px">';
+        html +=
+          "<div style=\"font-family:'Cinzel',serif;color:" +
+          esc(borderColor) +
+          ';font-size:0.95rem;margin-bottom:8px">' +
+          esc(camp.name) +
+          "</div>";
+        html +=
+          '<div style="color:var(--text3);font-size:0.82rem;margin-bottom:12px">' +
+          esc(String(camp.memberCount || 0)) +
+          " członków</div>";
+        if (camp.commander) {
+          html +=
+            '<div style="font-size:0.82rem;color:var(--text2);margin-bottom:10px">Dowódca: <span style="color:var(--gold)">' +
+            esc(camp.commander.charName) +
+            "</span></div>";
+        }
+        if (canJoin) {
+          html +=
+            '<button class="btn btn-primary btn-sm" onclick="App.joinCamp(\'' +
+            esc(cid) +
+            '\')" style="font-size:0.82rem;padding:6px 16px">Dołącz</button>';
+        }
+        html += "</div>";
+      }
+      html += "</div></div></div>";
+    } else {
+      var myCamp = camps[myCampId];
+      if (!myCamp) {
+        container.innerHTML =
+          '<div class="panel-box"><div class="panel-box-body" style="color:#e05555">Błąd danych obozu.</div></div>';
+        return;
+      }
+      var myColor = myCamp.color || "#888";
+      html +=
+        '<div style="background:var(--panel2);border:1px solid ' +
+        esc(myColor) +
+        ";border-left:5px solid " +
+        esc(myColor) +
+        ';border-radius:4px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">';
+      html +=
+        "<div style=\"font-family:'Cinzel',serif;color:" +
+        esc(myColor) +
+        ';font-size:1.05rem">' +
+        esc(myCamp.name) +
+        "</div>";
+      if (myCamp.commander) {
+        var termLeft = "";
+        if (myCamp.commanderTermEndsAt) {
+          var hoursLeft = Math.max(
+            0,
+            Math.ceil((myCamp.commanderTermEndsAt - Date.now()) / 3600000),
+          );
+          termLeft =
+            ' <span style="color:var(--text3);font-size:0.78rem">(pozostało: ' +
+            hoursLeft +
+            "h)</span>";
+        }
+        html +=
+          '<div style="font-size:0.85rem;color:var(--text2)">Dowódca: <span style="color:var(--gold)">' +
+          esc(myCamp.commander.charName) +
+          "</span>" +
+          termLeft +
+          "</div>";
+      } else if (myCamp.voting && myCamp.voting.active) {
+        var votingLeft = myCamp.voting.endsAt
+          ? Math.max(
+              0,
+              Math.ceil((myCamp.voting.endsAt - Date.now()) / 3600000),
+            )
+          : 0;
+        html +=
+          '<div style="font-size:0.85rem;color:#e0b84b">⚙ Głosowanie trwa (jeszcze ' +
+          votingLeft +
+          "h)</div>";
+      } else {
+        html +=
+          '<div style="font-size:0.85rem;color:var(--text3)">Brak dowódcy</div>';
+      }
+      html += "</div>";
+      var activeTab = App.state.campTab || "members";
+      html +=
+        '<div style="display:flex;gap:4px;margin-bottom:12px;justify-content:center;flex-wrap:wrap">';
+      var TABS = [
+        ["members", "Członkowie"],
+        ["voting", "Głosowanie"],
+        ["bonus", "Bonusy"],
+        ["monstrum", "⚔ Monstrum"],
+      ];
+      for (var ti = 0; ti < TABS.length; ti++) {
+        var tId = TABS[ti][0],
+          tLabel = TABS[ti][1];
+        var isActive = activeTab === tId;
+        var tabExtra = "";
+        if (tId === "monstrum" && App.state.campMonsterBlink)
+          tabExtra =
+            ' style="font-size:0.83rem;padding:5px 0;width:110px;animation:ticket-blink 1s ease-in-out infinite"';
+        else tabExtra = ' style="font-size:0.83rem;padding:5px 0;width:110px"';
+        html +=
+          '<button class="btn btn-' +
+          (isActive ? "primary" : "secondary") +
+          ' btn-sm" onclick="App.setCampTab(\'' +
+          tId +
+          "')\"" +
+          tabExtra +
+          ">" +
+          tLabel +
+          "</button>";
+      }
+      html += "</div>";
+      html += '<div id="camp-tab-inner">';
+      html += App._renderCampTabContent(activeTab, myCamp, myCampId, char);
+      html += "</div>";
+    }
+    container.innerHTML = html;
+    if (myCampId && activeTab === "monstrum") {
+      var innerEl = document.getElementById("camp-tab-inner");
+      if (innerEl) App._fetchAndRenderMonstrum(innerEl, myCampId);
+    }
+  };
+
+  App._renderCampTabContent = function (tab, camp, myCampId, char) {
+    var myUserId = char && char.userId;
+    if (tab === "members") {
+      var html = '<div class="panel-box"><div class="panel-box-body">';
+      if (!camp.members || camp.members.length === 0) {
+        html +=
+          '<div style="color:var(--text3);font-size:0.86rem">Brak członków.</div>';
+      } else {
+        html +=
+          '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">';
+        html += "<thead><tr>";
+        html +=
+          '<th style="text-align:left;padding:4px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)">#</th>';
+        html +=
+          '<th style="text-align:left;padding:4px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)">Postać</th>';
+        html +=
+          '<th style="text-align:right;padding:4px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)">Poz.</th>';
+        html +=
+          '<th style="text-align:right;padding:4px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)" title="Reputacja zdobyta przez pokonywanie potworów obozu">Rep.</th>';
+        html += "</tr></thead>";
+        html += "<tbody>";
+        for (var i = 0; i < camp.members.length; i++) {
+          var m = camp.members[i];
+          var nameColor = m.isCommander ? "var(--gold)" : "var(--text)";
+          var commanderBadge = m.isCommander
+            ? ' <span style="font-size:0.72rem;color:var(--gold);background:rgba(200,168,75,0.12);padding:1px 5px;border-radius:2px;border:1px solid rgba(200,168,75,0.3)">Dowódca</span>'
+            : "";
+          var meBadge =
+            m.userId === myUserId
+              ? ' <span style="font-size:0.72rem;color:var(--text3)">(ty)</span>'
+              : "";
+          html += '<tr style="border-bottom:1px solid var(--border2)">';
+          html +=
+            '<td style="padding:5px 8px;color:var(--text3)">' +
+            (i + 1) +
+            "</td>";
+          html +=
+            '<td style="padding:5px 8px;color:' +
+            esc(nameColor) +
+            '">' +
+            esc(m.charName) +
+            commanderBadge +
+            meBadge +
+            "</td>";
+          html +=
+            '<td style="padding:5px 8px;text-align:right;color:var(--text2)">' +
+            esc(String(m.level || 1)) +
+            "</td>";
+          html +=
+            '<td style="padding:5px 8px;text-align:right;color:var(--text3)">' +
+            esc(String(m.campReputation || 0)) +
+            "</td>";
+          html += "</tr>";
+        }
+        html += "</tbody></table>";
+      }
+      html += "</div></div>";
+      return html;
+    }
+    if (tab === "voting") {
+      var html = '<div class="panel-box"><div class="panel-box-body">';
+      var voting = camp.voting || {};
+      if (voting.active && voting.endsAt && Date.now() < voting.endsAt) {
+        var hoursLeft = Math.max(
+          0,
+          Math.ceil((voting.endsAt - Date.now()) / 3600000),
+        );
+        html +=
+          '<div style="color:#e0b84b;margin-bottom:12px;font-size:0.87rem">⚙ Głosowanie aktywne — kończy się za ' +
+          hoursLeft +
+          "h.</div>";
+        var voteCounts = voting.voteCounts || {};
+        var members = camp.members || [];
+        if (members.length > 0) {
+          html +=
+            '<div style="font-size:0.85rem;color:var(--text2);margin-bottom:8px">Kandydaci:</div>';
+          for (var mi = 0; mi < members.length; mi++) {
+            var m = members[mi];
+            var vCount = voteCounts[m.userId] ? voteCounts[m.userId].count : 0;
+            var isMyVote = voting.myVote === m.userId;
+            var voteBtn = "";
+            if (camp.canVote && !isMyVote) {
+              voteBtn =
+                ' <button class="btn btn-secondary btn-sm" onclick="App.campVote(\'' +
+                esc(m.userId) +
+                '\')" style="font-size:0.78rem;padding:3px 10px">Zagłosuj</button>';
+            } else if (isMyVote) {
+              voteBtn =
+                ' <span style="font-size:0.78rem;color:var(--gold)">✓ Twój głos</span>';
+            }
+            html +=
+              '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border2)">';
+            html +=
+              '<span style="color:var(--text);font-size:0.85rem;flex:1">' +
+              esc(m.charName) +
+              (m.isCommander
+                ? ' <span style="font-size:0.72rem;color:var(--gold)">(Dowódca)</span>'
+                : "") +
+              "</span>";
+            html +=
+              '<span style="color:var(--text3);font-size:0.82rem">' +
+              vCount +
+              " głos" +
+              (vCount === 1 ? "" : "ów") +
+              "</span>";
+            html += voteBtn;
+            html += "</div>";
+          }
+        }
+        if (!camp.canVote && !voting.myVote) {
+          var lastVote = camp.lastVoteAt || null;
+          if (lastVote) {
+            var nextVoteH = Math.ceil(
+              (7 * 24 * 3600000 - (Date.now() - lastVote)) / 3600000,
+            );
+            html +=
+              '<div style="color:var(--text3);font-size:0.82rem;margin-top:10px">Następne głosowanie za ' +
+              Math.max(0, nextVoteH) +
+              "h.</div>";
+          } else {
+            html +=
+              '<div style="color:var(--text3);font-size:0.82rem;margin-top:10px">Wyczerpałeś już głos w tej turze.</div>';
+          }
+        }
+      } else if (camp.commander && camp.commanderTermEndsAt) {
+        var termLeftH = Math.max(
+          0,
+          Math.ceil((camp.commanderTermEndsAt - Date.now()) / 3600000),
+        );
+        html +=
+          '<div style="color:var(--text2);font-size:0.87rem;margin-bottom:8px">Trwa kadencja dowódcy <span style="color:var(--gold)">' +
+          esc(camp.commander.charName) +
+          "</span>.</div>";
+        html +=
+          '<div style="color:var(--text3);font-size:0.83rem">Kolejne głosowanie za: <span style="color:var(--text2)">' +
+          termLeftH +
+          "h</span></div>";
+      } else {
+        html +=
+          '<div style="color:var(--text3);font-size:0.86rem">Głosowanie nie jest aktualnie aktywne.</div>';
+      }
+      html += "</div></div>";
+      return html;
+    }
+    if (tab === "bonus") {
+      var html = '<div class="panel-box"><div class="panel-box-body">';
+      var isCommander = camp.commander && camp.commander.userId === myUserId;
+      var BONUSES = [
+        {
+          id: "xp10",
+          name: "+10% EXP z polowania",
+          desc: "Wszyscy członkowie obozu zdobywają 10% więcej doświadczenia z polowania.",
+        },
+        {
+          id: "dmg10",
+          name: "+10 obrażeń w walce",
+          desc: "Wszyscy członkowie zadają o 10 więcej obrażeń podczas polowania.",
+        },
+        {
+          id: "guard30",
+          name: "+30% złota z warty",
+          desc: "Wszyscy członkowie zarabiają 30% więcej złota podczas warty.",
+        },
+        {
+          id: "brew5",
+          name: "Warzenie w 5 minut",
+          desc: "Wszystkie mikstury warzone przez członków zajmują tylko 5 minut.",
+        },
+      ];
+      if (camp.bonus) {
+        var activeBonusDef = null;
+        for (var bi = 0; bi < BONUSES.length; bi++) {
+          if (BONUSES[bi].id === camp.bonus.type) {
+            activeBonusDef = BONUSES[bi];
+            break;
+          }
+        }
+        html +=
+          '<div style="background:rgba(74,143,74,0.1);border:1px solid #3a7d44;border-radius:4px;padding:12px;margin-bottom:14px">';
+        html +=
+          '<div style="color:#4ab04a;font-size:0.9rem;margin-bottom:4px">✓ Aktywny bonus:</div>';
+        html +=
+          '<div style="color:var(--text);font-size:0.88rem;font-weight:600">' +
+          esc(activeBonusDef ? activeBonusDef.name : camp.bonus.type) +
+          "</div>";
+        if (activeBonusDef)
+          html +=
+            '<div style="color:var(--text3);font-size:0.82rem;margin-top:4px">' +
+            esc(activeBonusDef.desc) +
+            "</div>";
+        html += "</div>";
+      } else {
+        if (isCommander) {
+          html +=
+            '<div style="color:var(--text2);font-size:0.86rem;margin-bottom:12px">Jesteś dowódcą. Wybierz bonus dla swojego obozu:</div>';
+          for (var bi = 0; bi < BONUSES.length; bi++) {
+            var b = BONUSES[bi];
+            html +=
+              '<div style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+            html +=
+              '<div style="flex:1;min-width:160px"><div style="color:var(--text);font-size:0.87rem;font-weight:600">' +
+              esc(b.name) +
+              '</div><div style="color:var(--text3);font-size:0.8rem;margin-top:2px">' +
+              esc(b.desc) +
+              "</div></div>";
+            html +=
+              '<button class="btn btn-primary btn-sm" onclick="App.campSetBonus(\'' +
+              esc(b.id) +
+              '\')" style="font-size:0.82rem;padding:5px 14px">Aktywuj</button>';
+            html += "</div>";
+          }
+        } else {
+          html +=
+            '<div style="color:var(--text3);font-size:0.86rem;margin-bottom:10px">Brak aktywnego bonusu. Dowódca może wybrać bonus na czas kadencji.</div>';
+          html +=
+            '<div style="font-size:0.84rem;color:var(--text2);margin-top:8px">Dostępne bonusy:</div>';
+          for (var bi = 0; bi < BONUSES.length; bi++) {
+            var b = BONUSES[bi];
+            html +=
+              '<div style="padding:7px 0;border-bottom:1px solid var(--border2)">';
+            html +=
+              '<div style="color:var(--text);font-size:0.85rem">' +
+              esc(b.name) +
+              "</div>";
+            html +=
+              '<div style="color:var(--text3);font-size:0.8rem">' +
+              esc(b.desc) +
+              "</div>";
+            html += "</div>";
+          }
+        }
+      }
+      html += "</div></div>";
+      return html;
+    }
+    return "";
+  };
+
+  App.setCampTab = function (tab) {
+    if (App.state._monstrumTimer) {
+      clearInterval(App.state._monstrumTimer);
+      App.state._monstrumTimer = null;
+    }
+    App.state.campTab = tab;
+    if (tab === "monstrum") {
+      App.state.campMonsterBlink = false;
+      var campBtn = document.getElementById("nav-camp");
+      if (campBtn) campBtn.classList.remove("ticket-unread");
+    }
+    var container = document.getElementById("camp-tab-inner");
+    if (!container) {
+      App.renderCamp();
+      return;
+    }
+    var myCampId = App.state.myCampId;
+    var camps = App.state.campData;
+    if (!myCampId || !camps) return;
+    var myCamp = camps[myCampId];
+    if (!myCamp) return;
+    if (tab === "monstrum") {
+      App._fetchAndRenderMonstrum(container, myCampId);
+    } else {
+      container.innerHTML = App._renderCampTabContent(
+        tab,
+        myCamp,
+        myCampId,
+        App.state.character,
+      );
+    }
+  };
+
+  App.joinCamp = async function (campId) {
+    var CAMP_NAMES = {
+      swamp: "Obóz na Bagnie",
+      old: "Stary Obóz",
+      new: "Nowy Obóz",
+    };
+    var campDisplayName = CAMP_NAMES[campId] || campId;
+    if (
+      !confirm(
+        "Dołączyć do " + campDisplayName + "? Tej decyzji nie można cofnąć!",
+      )
+    )
+      return;
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/camps/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ campId: campId }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      App.state.campData = data.camps;
+      App.state.myCampId = data.myCampId;
+      App.showNotification("Dołączyłeś do obozu!", "success");
+      App.renderCamp();
+    } catch (e) {
+      App.showNotification("Błąd połączenia.", "error");
+    }
+  };
+
+  App.campVote = async function (candidateUserId) {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/camps/vote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ candidateUserId: candidateUserId }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      App.state.campData = data.camps;
+      App.showNotification("Głos oddany!", "success");
+      App.setCampTab("voting");
+    } catch (e) {
+      App.showNotification("Błąd połączenia.", "error");
+    }
+  };
+
+  App.campSetBonus = async function (bonusType) {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/camps/bonus", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ bonusType: bonusType }),
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      App.state.campData = data.camps;
+      App.showNotification("Bonus aktywowany!", "success");
+      App.setCampTab("bonus");
+    } catch (e) {
+      App.showNotification("Błąd połączenia.", "error");
+    }
+  };
+
+  App._MONSTRUM_ITEM_NAMES = {
+    mikstura_lowcy: "Mikstura Łowcy",
+    mikstura_wartownika: "Mikstura Wartownika",
+    mikstura_wzrostu: "Mikstura Wzrostu",
+    mikstura_kopacza: "Mikstura Kopacza",
+    brylka_rudy: "Bryłka Rudy",
+    brylka_zlota: "Bryłka Złota",
+    brylka_siarki: "Bryłka Siarki",
+    brylka_wegla: "Bryłka Węgla",
+  };
+
+  App._monstrumFmtCountdown = function (ms) {
+    if (ms <= 0) return "00:00";
+    var totalSec = Math.floor(ms / 1000);
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    if (h > 0)
+      return (
+        h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
+      );
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  };
+
+  App._fetchAndRenderMonstrum = async function (container, myCampId) {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/monstrum/state", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      var data = await res.json();
+      if (res.ok) App.state.monstrumData = data.state;
+    } catch (e) {}
+    App._renderMonstrumInContainer(container, myCampId);
+    App._startMonstrumTimer(myCampId);
+  };
+
+  App._refreshMonstrumTab = function () {
+    if (App.state.campTab !== "monstrum") return;
+    var container = document.getElementById("camp-tab-inner");
+    if (!container) return;
+    var myCampId = App.state.myCampId;
+    if (!myCampId) return;
+    App._renderMonstrumInContainer(container, myCampId);
+    App._startMonstrumTimer(myCampId);
+  };
+
+  App._startMonstrumTimer = function (myCampId) {
+    if (App.state._monstrumTimer) {
+      clearInterval(App.state._monstrumTimer);
+      App.state._monstrumTimer = null;
+    }
+    App.state._monstrumTimer = setInterval(function () {
+      if (
+        App.state.campTab !== "monstrum" ||
+        App.state.currentSection !== "camp"
+      ) {
+        clearInterval(App.state._monstrumTimer);
+        App.state._monstrumTimer = null;
+        return;
+      }
+      var cd =
+        App.state.monstrumData && myCampId && App.state.monstrumData[myCampId];
+      if (!cd) return;
+      var now = Date.now();
+      if (cd.state === "joining" && cd.joinWindowEndsAt) {
+        var el = document.getElementById("monstrum-join-countdown");
+        if (el) {
+          var rem = cd.joinWindowEndsAt - now;
+          if (rem <= 0) {
+            App._refreshMonstrumTab();
+            return;
+          }
+          el.textContent = App._monstrumFmtCountdown(rem);
+        }
+        var groupStr = (cd.participants || []).reduce(function (s, p) {
+          return s + (p.strength || 0);
+        }, 0);
+        var gsEl = document.getElementById("monstrum-group-strength-val");
+        if (gsEl) gsEl.textContent = groupStr.toLocaleString();
+        var barEl = document.getElementById("monstrum-strength-bar-fill");
+        if (barEl && cd.monster) {
+          var pct = Math.min(
+            100,
+            Math.round((groupStr / cd.monster.strength) * 100),
+          );
+          barEl.style.width = pct + "%";
+          barEl.style.background =
+            pct >= 100 ? "var(--green2)" : "var(--gold2)";
+        }
+        var cntEl = document.getElementById("monstrum-participant-count");
+        if (cntEl) cntEl.textContent = (cd.participants || []).length;
+      } else if (cd.state === "idle" && cd.nextSpawnAt) {
+        var el = document.getElementById("monstrum-spawn-countdown");
+        if (el)
+          el.textContent = App._monstrumFmtCountdown(cd.nextSpawnAt - now);
+      }
+    }, 1000);
+  };
+
+  App._renderMonstrumInContainer = function (container, myCampId) {
+    var cd = App.state.monstrumData && App.state.monstrumData[myCampId];
+    var myUserId = App.state.character && App.state.character.userId;
+    var now = Date.now();
+    var html = '<div class="panel-box"><div class="panel-box-body">';
+
+    if (!cd) {
+      html +=
+        '<div style="color:var(--text3);font-size:0.86rem">Ładowanie...</div>';
+      html += "</div></div>";
+      container.innerHTML = html;
+      return;
+    }
+
+    if (cd.state === "joining" && cd.monster) {
+      var rem = Math.max(0, cd.joinWindowEndsAt - now);
+      var groupStrength = (cd.participants || []).reduce(function (s, p) {
+        return s + (p.strength || 0);
+      }, 0);
+      var alreadyIn = (cd.participants || []).some(function (p) {
+        return p.userId === myUserId;
+      });
+      var pct =
+        cd.monster.strength > 0
+          ? Math.min(
+              100,
+              Math.round((groupStrength / cd.monster.strength) * 100),
+            )
+          : 0;
+      var barColor = pct >= 100 ? "var(--green2)" : "var(--gold2)";
+
+      html +=
+        '<div style="background:rgba(224,74,74,0.08);border:1px solid rgba(224,74,74,0.3);border-radius:4px;padding:14px;margin-bottom:14px">';
+      html +=
+        "<div style=\"font-family:'Cinzel',serif;color:#e04a4a;font-size:0.95rem;margin-bottom:10px\">⚠ Potwór w pobliżu!</div>";
+      html +=
+        '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:4px">' +
+        esc(cd.monster.name) +
+        "</div>";
+      html +=
+        '<div style="font-size:0.85rem;color:var(--text3);margin-bottom:12px">Siła potwora: <span style="color:#e04a4a;font-weight:600">' +
+        cd.monster.strength.toLocaleString() +
+        "</span></div>";
+      html +=
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">';
+      html +=
+        '<div style="font-size:0.82rem;color:var(--text3)">Czas na dołączenie:</div>';
+      html +=
+        '<div id="monstrum-join-countdown" style="font-family:\'Cinzel\',serif;color:var(--gold);font-size:1rem;font-weight:700">' +
+        App._monstrumFmtCountdown(rem) +
+        "</div>";
+      html += "</div>";
+      if (!alreadyIn) {
+        html +=
+          '<button class="btn btn-primary" onclick="App.campJoinFight()" style="margin-bottom:14px;font-size:0.9rem;padding:8px 24px">⚔ Dołącz do walki</button>';
+      } else {
+        html +=
+          '<div style="color:var(--green2);font-size:0.87rem;margin-bottom:14px">✓ Jesteś w grupie — czekaj na walkę!</div>';
+      }
+      html += "</div>";
+
+      html += '<div style="margin-bottom:12px">';
+      html +=
+        '<div style="font-size:0.82rem;color:var(--text3);margin-bottom:6px">Siła grupy vs. potwór:</div>';
+      html +=
+        '<div style="background:var(--bg3);border-radius:3px;height:10px;overflow:hidden;margin-bottom:4px">';
+      html +=
+        '<div id="monstrum-strength-bar-fill" style="height:100%;width:' +
+        pct +
+        "%;background:" +
+        barColor +
+        ';transition:width 0.5s"></div>';
+      html += "</div>";
+      html +=
+        '<div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--text3)">';
+      html +=
+        '<span>Łączna siła: <strong id="monstrum-group-strength-val" style="color:var(--text2)">' +
+        groupStrength.toLocaleString() +
+        "</strong></span>";
+      html +=
+        '<span>Potrzeba: <strong style="color:#e04a4a">' +
+        cd.monster.strength.toLocaleString() +
+        "</strong></span>";
+      html += "</div></div>";
+
+      html += '<div style="margin-top:12px">';
+      html +=
+        '<div style="font-size:0.84rem;color:var(--text3);margin-bottom:8px">Grupa śmiałków (<span id="monstrum-participant-count">' +
+        (cd.participants || []).length +
+        "</span> os.):</div>";
+      if ((cd.participants || []).length === 0) {
+        html +=
+          '<div style="color:var(--text3);font-size:0.82rem;font-style:italic">Nikt jeszcze nie dołączył...</div>';
+      } else {
+        html +=
+          '<table style="width:100%;border-collapse:collapse;font-size:0.83rem">';
+        html += "<thead><tr>";
+        html +=
+          '<th style="text-align:left;padding:3px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)">Postać</th>';
+        html +=
+          '<th style="text-align:right;padding:3px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)">Poz.</th>';
+        html +=
+          '<th style="text-align:right;padding:3px 8px;color:var(--text3);font-weight:normal;border-bottom:1px solid var(--border)" title="Obrażenia + Obrona">Siła</th>';
+        html += "</tr></thead><tbody>";
+        for (var pi = 0; pi < cd.participants.length; pi++) {
+          var p = cd.participants[pi];
+          var isMe = p.userId === myUserId;
+          html += '<tr style="border-bottom:1px solid var(--border2)">';
+          html +=
+            '<td style="padding:4px 8px;color:' +
+            (isMe ? "var(--gold)" : "var(--text)") +
+            '">' +
+            esc(p.charName) +
+            (isMe
+              ? ' <span style="font-size:0.72rem;color:var(--text3)">(ty)</span>'
+              : "") +
+            "</td>";
+          html +=
+            '<td style="padding:4px 8px;text-align:right;color:var(--text2)">' +
+            (p.level || 1) +
+            "</td>";
+          html +=
+            '<td style="padding:4px 8px;text-align:right;color:var(--text3)">' +
+            (p.strength || 0) +
+            "</td>";
+          html += "</tr>";
+        }
+        html += "</tbody></table>";
+      }
+      html += "</div>";
+    } else {
+      html +=
+        '<div style="font-size:0.82rem;color:var(--text3);margin-bottom:6px">Spokój... na razie.</div>';
+      if (cd.nextSpawnAt && cd.nextSpawnAt > now) {
+        html +=
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">';
+        html +=
+          '<span style="font-size:0.83rem;color:var(--text3)">Następny potwór za:</span>';
+        html +=
+          '<span id="monstrum-spawn-countdown" style="font-family:\'Cinzel\',serif;color:var(--gold);font-weight:700">' +
+          App._monstrumFmtCountdown(cd.nextSpawnAt - now) +
+          "</span>";
+        html += "</div>";
+      }
+      if (cd.lastResult) {
+        var lr = cd.lastResult;
+        var lrColor = lr.won ? "var(--green2)" : "#e04a4a";
+        var lrIcon = lr.won ? "✓" : "✗";
+        html +=
+          '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-top:4px">';
+        html +=
+          '<div style="font-size:0.78rem;color:var(--text3);margin-bottom:4px">Ostatnia walka:</div>';
+        html +=
+          '<div style="font-size:0.87rem;color:var(--text);margin-bottom:4px">' +
+          esc(lr.monster ? lr.monster.name : "?") +
+          "</div>";
+        html +=
+          '<div style="font-size:0.82rem;display:flex;gap:14px;flex-wrap:wrap">';
+        html +=
+          '<span style="color:' +
+          lrColor +
+          '">' +
+          lrIcon +
+          " " +
+          (lr.won ? "Wygrana" : "Przegrana") +
+          "</span>";
+        html +=
+          '<span style="color:var(--text3)">Siła grupy: ' +
+          (lr.groupStrength || 0).toLocaleString() +
+          "</span>";
+        html +=
+          '<span style="color:var(--text3)">Gracze: ' +
+          (lr.participantCount || 0) +
+          "</span>";
+        html += "</div></div>";
+      }
+    }
+
+    html +=
+      '<div style="margin-top:16px;border-top:1px solid var(--border2);padding-top:10px">';
+    html +=
+      '<div style="font-size:0.78rem;color:var(--text3);margin-bottom:4px">Nagrody za zwycięstwo:</div>';
+    html += '<div style="font-size:0.8rem;color:var(--text3);line-height:1.7">';
+    html += "⚔ EXP: poziom × 5 &nbsp;|&nbsp; 💰 Złoto: poziom × 4<br>";
+    html += "🧪 1× losowa mikstura &nbsp;|&nbsp; ⛏ 2× losowy surowiec<br>";
+    html += "⭐ +1 Reputacja w obozie (tytuły)";
+    html += "</div></div>";
+
+    html += "</div></div>";
+    container.innerHTML = html;
+  };
+
+  App.campJoinFight = async function () {
+    var token = localStorage.getItem("mg_token");
+    try {
+      var res = await fetch("/api/monstrum/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        App.showNotification(data.error || "Błąd", "error");
+        return;
+      }
+      App.state.monstrumData = data.state;
+      App._refreshMonstrumTab();
+      App.showNotification("Dołączyłeś do grupy!", "success");
+    } catch (e) {
+      App.showNotification("Błąd połączenia.", "error");
+    }
+  };
+
+  App._showMonstrumRewardPopup = function (data) {
+    var ITEM_NAMES = App._MONSTRUM_ITEM_NAMES;
+    var overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+    var box = document.createElement("div");
+    box.style.cssText =
+      "background:var(--panel);border:1px solid var(--border);border-radius:6px;max-width:360px;width:100%;padding:22px 24px;text-align:center";
+    if (data.won) {
+      var items = (data.rewards && data.rewards.items) || [];
+      var itemsHtml = items
+        .map(function (id) {
+          return ITEM_NAMES[id] || id;
+        })
+        .join(", ");
+      box.innerHTML =
+        "<div style=\"font-family:'Cinzel',serif;color:var(--gold);font-size:1.1rem;margin-bottom:12px\">⚔ Zwycięstwo!</div>" +
+        '<div style="color:var(--text2);font-size:0.9rem;margin-bottom:16px">Twoja grupa pokonała <strong>' +
+        esc(data.monsterName) +
+        "</strong>!</div>" +
+        '<div style="background:var(--bg3);border-radius:4px;padding:12px;text-align:left;margin-bottom:16px;font-size:0.85rem">' +
+        '<div style="color:var(--text3);margin-bottom:6px">Nagrody:</div>' +
+        '<div style="color:var(--text2);line-height:1.9">' +
+        "💰 +" +
+        (data.rewards ? data.rewards.gold : 0) +
+        " złota<br>" +
+        "✨ +" +
+        (data.rewards ? data.rewards.exp : 0) +
+        " EXP<br>" +
+        "⭐ +1 Reputacja<br>" +
+        "🎒 " +
+        esc(itemsHtml) +
+        "</div></div>" +
+        '<button class="btn btn-primary btn-sm" onclick="this.closest(\'div[style*=fixed]\').remove()">OK</button>';
+    } else {
+      box.innerHTML =
+        "<div style=\"font-family:'Cinzel',serif;color:#e04a4a;font-size:1.1rem;margin-bottom:12px\">💀 Porażka</div>" +
+        '<div style="color:var(--text2);font-size:0.9rem;margin-bottom:16px">Wasza grupa poległa w walce z <strong>' +
+        esc(data.monsterName) +
+        "</strong>.</div>" +
+        '<div style="color:var(--text3);font-size:0.83rem;margin-bottom:16px">Żadnych nagród. Następny potwór pojawi się za 2 godziny.</div>' +
+        '<button class="btn btn-secondary btn-sm" onclick="this.closest(\'div[style*=fixed]\').remove()">Zamknij</button>';
+    }
+    overlay.appendChild(box);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
   };
 
   App.initKronika = function () {

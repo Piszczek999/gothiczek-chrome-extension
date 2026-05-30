@@ -13,8 +13,6 @@ function replaceAppMineGame() {
     var targetMaterialType = null;
     var autoActive = false;
     var startMiningSent = false;
-    let intervalId = null;
-    let running = false;
 
     var VIRT_W = 800,
       VIRT_H = 500;
@@ -253,7 +251,12 @@ function replaceAppMineGame() {
 
     function _doEnter(type) {
       var char = App.state.character;
-      if (char && char.activity && char.activity.type) {
+      if (
+        char &&
+        char.activity &&
+        char.activity.type &&
+        char.activity.type !== "mining"
+      ) {
         var actLabels = {
           hunting: "polowanie",
           guard: "wartę",
@@ -304,6 +307,8 @@ function replaceAppMineGame() {
       socket.on("mine_vein_spawned", _onVeinSpawned);
       socket.on("mine_error", _onMineError);
       socket.on("mine_skill_info", _onSkillInfo);
+      socket.on("mine_restore_material", _onRestoreMaterial);
+      socket.on("mine_offline_results", _onOfflineResults);
     }
 
     function _attachCanvas() {
@@ -311,13 +316,13 @@ function replaceAppMineGame() {
       if (!canvas) return;
       ctx = canvas.getContext("2d");
       lastTickTime = performance.now();
-      if (rafId) clearTimeout(rafId); // changed
-      rafId = setTimeout(() => _loop(performance.now()), 1000 / 60); // changed
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(_loop);
     }
 
     function pause() {
       if (rafId) {
-        clearTimeout(rafId);
+        cancelAnimationFrame(rafId);
         rafId = null;
       }
       canvas = null;
@@ -342,6 +347,8 @@ function replaceAppMineGame() {
         socket.off("mine_vein_spawned", _onVeinSpawned);
         socket.off("mine_error", _onMineError);
         socket.off("mine_skill_info", _onSkillInfo);
+        socket.off("mine_restore_material", _onRestoreMaterial);
+        socket.off("mine_offline_results", _onOfflineResults);
       }
       entered = false;
       state = null;
@@ -373,10 +380,11 @@ function replaceAppMineGame() {
     }
 
     function _loop(now) {
-      rafId = setTimeout(() => _loop(performance.now()), 1000 / 60); // changed
+      rafId = requestAnimationFrame(_loop);
       if (!canvas || !ctx) return;
       var elapsed = now - lastTickTime;
-      var dt = Math.min(elapsed / 1000, 0.3);
+      if (elapsed < 15) return;
+      var dt = Math.min(elapsed / 1000, 0.1);
       lastTickTime = now;
       _tick(dt);
       _draw();
@@ -385,7 +393,7 @@ function replaceAppMineGame() {
     function _tick(dt) {
       if (!state || !socket) return;
       state.players.forEach(function (p) {
-        if (p.socketId === socket.id) return;
+        if (p.socketId === socket.id || p.miningVeinId) return;
         if (p.targetX === undefined) {
           p.targetX = p.x;
           p.targetY = p.y;
@@ -403,31 +411,21 @@ function replaceAppMineGame() {
         vdy = tv.y - me.y;
       var vdist = Math.hypot(vdx, vdy);
       if (vdist > 52) {
-        _moveToward(me, tv.x, tv.y, dt);
+        _moveToward(me, vdx / vdist, vdy / vdist, dt);
       } else {
+        socket.emit("mine_move", { x: me.x, y: me.y });
         socket.emit("mine_start_mining", { veinId: tv.id });
         startMiningSent = true;
       }
     }
 
-    function _moveToward(me, targetX, targetY, dt) {
-      var vdx = targetX - me.x;
-      var vdy = targetY - me.y;
-      var vdist = Math.hypot(vdx, vdy);
-      var dirX = vdx / vdist;
-      var dirY = vdy / vdist;
-      var stepDist = SPEED * dt;
-      if (stepDist >= vdist) {
-        me.x = targetX;
-        me.y = targetY;
-      } else {
-        me.x = Math.round(
-          Math.max(8, Math.min(VIRT_W - 8, me.x + dirX * SPEED * dt)),
-        );
-        me.y = Math.round(
-          Math.max(8, Math.min(VIRT_H - 8, me.y + dirY * SPEED * dt)),
-        );
-      }
+    function _moveToward(me, dirX, dirY, dt) {
+      me.x = Math.round(
+        Math.max(8, Math.min(VIRT_W - 8, me.x + dirX * SPEED * dt)),
+      );
+      me.y = Math.round(
+        Math.max(8, Math.min(VIRT_H - 8, me.y + dirY * SPEED * dt)),
+      );
       var nowMs = performance.now();
       if (nowMs - lastMoveSent >= 33) {
         socket.emit("mine_move", { x: me.x, y: me.y });
@@ -447,6 +445,8 @@ function replaceAppMineGame() {
       if (!targetMaterialType || autoActive) return;
       autoActive = true;
       startMiningSent = false;
+      if (socket)
+        socket.emit("mine_set_material", { materialType: targetMaterialType });
       _updateAutoUI();
     }
 
@@ -454,6 +454,7 @@ function replaceAppMineGame() {
       autoActive = false;
       startMiningSent = false;
       if (socket) socket.emit("mine_cancel_mining");
+      if (socket) socket.emit("mine_set_material", { materialType: null });
       _updateAutoUI();
     }
 
@@ -618,6 +619,24 @@ function replaceAppMineGame() {
         Math.round(parseInt(hex.slice(5, 7), 16) * f) +
         ")"
       );
+    }
+
+    function _onRestoreMaterial(data) {
+      if (!data || !data.materialType) return;
+      var validTypes = MINE_MATERIAL_TYPES[mineType] || [];
+      if (validTypes.indexOf(data.materialType) === -1) return;
+      targetMaterialType = data.materialType;
+      autoActive = true;
+      startMiningSent = false;
+      _updateAutoUI();
+    }
+    function _onOfflineResults(data) {
+      if (data && data.events && data.events.length)
+        App.showOfflineSummary(data.events);
+      if (data && data.inventory && App.state.character) {
+        App.state.character.inventory = data.inventory;
+        if (App.state.currentSection === "bag") App.renderBag();
+      }
     }
 
     function _onState(data) {
@@ -836,6 +855,8 @@ function replaceAppMineGame() {
       socket.off("mine_vein_spawned", _onVeinSpawned);
       socket.off("mine_error", _onMineError);
       socket.off("mine_skill_info", _onSkillInfo);
+      socket.off("mine_restore_material", _onRestoreMaterial);
+      socket.off("mine_offline_results", _onOfflineResults);
       entered = false;
       state = null;
       startMiningSent = false;
