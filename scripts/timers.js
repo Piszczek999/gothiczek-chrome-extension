@@ -70,7 +70,7 @@ Ext.timers = {
 
     Ext.timers.renderTimer(
       "nav-alchemy",
-      Date.now() + totalQueueMs,
+      Date.now() + bRem,
       App.POTION_RECIPES[activity.potionId]?.brewMs ?? totalQueueMs,
       [
         { below: 5 * MINUTE, color: "yellow" }, // < 5 min  → yellow
